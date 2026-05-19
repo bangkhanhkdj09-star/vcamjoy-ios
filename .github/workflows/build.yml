@@ -1,4 +1,4 @@
-name: Build VCamJoy Tweak
+name: Build VCamJoy Tweak DEB
 
 on:
   push:
@@ -7,75 +7,38 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: macos-14
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Setup Theos
         run: |
-          sudo apt-get update -q
-          sudo apt-get install -y -q fakeroot libxml2 xz-utils curl git make
-
-      - name: Cache Theos
-        uses: actions/cache@v4
-        id: theos-cache
-        with:
-          path: /opt/theos
-          key: theos-${{ runner.os }}-v6
-
-      - name: Install Theos
-        if: steps.theos-cache.outputs.cache-hit != 'true'
-        run: |
-          git clone --recursive https://github.com/theos/theos /opt/theos
-
-      - name: Cache Toolchain
-        uses: actions/cache@v4
-        id: toolchain-cache
-        with:
-          path: /opt/theos/toolchain
-          key: theos-toolchain-${{ runner.os }}-v6
-
-      - name: Install Toolchain
-        if: steps.toolchain-cache.outputs.cache-hit != 'true'
-        run: |
-          # Toolchain chính thức từ kabiroberai (clang cho iOS trên Linux)
-          mkdir -p /opt/theos/toolchain
-          curl -L -o /tmp/toolchain.tar.gz \
-            "https://github.com/kabiroberai/swift-toolchain-linux/releases/download/v2.3.0/toolchain-linux.tar.gz" \
-            --retry 3 --connect-timeout 30
-          tar -xzf /tmp/toolchain.tar.gz -C /opt/theos/toolchain/
-          echo "=== Toolchain bin ==="
-          ls /opt/theos/toolchain/linux/iphone/bin/ | head -10
-
-      - name: Cache SDK
-        uses: actions/cache@v4
-        id: sdk-cache
-        with:
-          path: /opt/theos/sdks
-          key: theos-sdk-16.5-v2
+          export THEOS=$HOME/theos
+          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+          echo "$HOME/theos/bin" >> $GITHUB_PATH
+          git clone --recursive https://github.com/theos/theos $HOME/theos
 
       - name: Install SDK
-        if: steps.sdk-cache.outputs.cache-hit != 'true'
         run: |
-          mkdir -p /opt/theos/sdks
-          curl -L -o /tmp/sdk.tar.xz \
-            "https://github.com/theos/sdks/releases/download/master/iPhoneOS16.5.sdk.tar.xz" \
-            --retry 3 --connect-timeout 30
-          file /tmp/sdk.tar.xz
-          tar -xJf /tmp/sdk.tar.xz -C /opt/theos/sdks/
-          echo "=== SDKs ==="
-          ls /opt/theos/sdks/
+          curl -LO "https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS16.5.sdk.tar.xz"
+          tar xf iPhoneOS16.5.sdk.tar.xz -C $HOME/theos/sdks/
+          echo "SDK OK: $(ls $HOME/theos/sdks/)"
 
-      - name: Build
+      - name: Install ldid
         run: |
-          export THEOS=/opt/theos
-          export PATH="$THEOS/bin:$PATH"
-          make package FINALPACKAGE=1
+          brew install ldid
+
+      - name: Build DEB
+        run: |
+          export THEOS=$HOME/theos
+          export PATH=$THEOS/bin:$PATH
+          make package FINALPACKAGE=1 2>&1
 
       - name: Upload DEB
         uses: actions/upload-artifact@v4
         with:
-          name: vcamjoy-tweak-deb
+          name: VCamJoy-Tweak-DEB
           path: packages/*.deb
-          if-no-files-found: error
+          retention-days: 7
