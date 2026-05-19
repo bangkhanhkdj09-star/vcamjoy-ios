@@ -10,7 +10,6 @@
 #import "VCamReceiver.h"
 #import <AVFoundation/AVFoundation.h>
 #import <Photos/Photos.h>
-#import <MobileCoreServices/MobileCoreServices.h>
 
 #define HEX(h) [UIColor colorWithRed:((h>>16)&0xFF)/255.0 green:((h>>8)&0xFF)/255.0 blue:(h&0xFF)/255.0 alpha:1]
 #define CBGBASE  HEX(0x050508)
@@ -208,13 +207,13 @@ static NSData *kSOI,*kEOI;
 - (void)onPickMedia {
     UIImagePickerController *pk=[[UIImagePickerController alloc]init];
     pk.sourceType=UIImagePickerControllerSourceTypePhotoLibrary;
-    pk.mediaTypes=@[(NSString*)kUTTypeImage,(NSString*)kUTTypeMovie];
+    pk.mediaTypes=@[@"public.image",@"public.movie"];
     pk.delegate=self; [self presentViewController:pk animated:YES completion:nil];
 }
 - (void)imagePickerController:(UIImagePickerController*)pk didFinishPickingMediaWithInfo:(NSDictionary*)info {
     [pk dismissViewControllerAnimated:YES completion:nil];
     NSString *type=info[UIImagePickerControllerMediaType];
-    if([type isEqualToString:(NSString*)kUTTypeImage]) {
+    if([type isEqualToString:@"public.image"]) {
         self.localImg=info[UIImagePickerControllerOriginalImage];
         self.player=nil;
         NSURL *u=info[UIImagePickerControllerImageURL];
@@ -280,7 +279,7 @@ static NSData *kSOI,*kEOI;
 - (void)onCS:(UISwitch*)sw {
     if(sw.isOn){
         self.csLink=[CADisplayLink displayLinkWithTarget:self selector:@selector(csTick)];
-        if(@available(iOS 15,*)) self.csLink.preferredFrameRateRange=[CAFrameRateRange rangeWithMinimum:60 maximum:60 preferred:60];
+        self.csLink.preferredFramesPerSecond=60;
         [self.csLink addToRunLoop:[NSRunLoop mainRunLoop] forMode:NSRunLoopCommonModes];
     } else {
         [self.csLink invalidate]; self.csLink=nil;
