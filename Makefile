@@ -1,5 +1,6 @@
 ARCHS = arm64 arm64e
-TARGET = iphone:clang:16.5:15.0
+TARGET = iphone:clang:latest:15.0
+
 INSTALL_TARGET_PROCESSES = Camera
 
 include $(THEOS)/makefiles/common.mk
