@@ -1,0 +1,8 @@
+Package: com.vcamjoy.tweak
+Name: VCamJoy Tweak
+Version: 1.0
+Architecture: iphoneos-arm64
+Description: Virtual Camera - Hook vao Camera app
+Maintainer: vcamjoy
+Section: Tweaks
+Depends: mobilesubstrate
