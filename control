@@ -1,9 +1,0 @@
-Package: com.vcamjoy.tweak
-Name: VCamJoy Tweak
-Version: 1.0
-Architecture: iphoneos-arm64
-Description: Virtual Camera - Hook vao Camera app (roothide)
-Maintainer: vcamjoy
-Section: Tweaks
-Tag: compatible_min(roothide)
-Depends: org.coolstar.libhooker | com.saurik.substrate.safemode
