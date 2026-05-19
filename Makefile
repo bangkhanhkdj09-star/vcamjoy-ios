@@ -1,7 +1,6 @@
 ARCHS = arm64 arm64e
 TARGET = iphone:clang:16.5:15.0
 INSTALL_TARGET_PROCESSES = Camera
-THEOS_PACKAGE_SCHEME = roothide
 
 include $(THEOS)/makefiles/common.mk
 
