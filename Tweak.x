@@ -27,7 +27,7 @@ static NSString  *gStreamURL   = nil;
 @implementation VCamReceiver
 + (instancetype)shared {
     static VCamReceiver *s; static dispatch_once_t t;
-    dispatch_once(&t,^{s=[self new]}); return s;
+    dispatch_once(&t,^{s=[self new];}); return s;
 }
 - (instancetype)init {
     if(!(self=[super init]))return nil;
