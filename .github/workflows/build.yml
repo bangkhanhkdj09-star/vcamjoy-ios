@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: macos-14        # Mac miễn phí trên GitHub Actions
+    runs-on: macos-14
     timeout-minutes: 30
 
     steps:
@@ -17,7 +17,7 @@ jobs:
     - name: Select Xcode 15
       run: sudo xcode-select -s /Applications/Xcode_15.4.app
 
-    - name: Install ldid (sign for JB)
+    - name: Install ldid
       run: brew install ldid
 
     - name: Build .app
@@ -29,6 +29,8 @@ jobs:
           -sdk iphoneos \
           -arch arm64 \
           CODE_SIGNING_ALLOWED=NO \
+          CODE_SIGNING_REQUIRED=NO \
+          CODE_SIGN_IDENTITY="" \
           GCC_TREAT_WARNINGS_AS_ERRORS=NO \
           CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS=NO \
           ONLY_ACTIVE_ARCH=NO \
@@ -39,22 +41,39 @@ jobs:
 
     - name: Find built .app
       run: |
-        APP=$(find build -name "*.app" | head -1)
+        APP=$(find build -name "VCamJoy.app" | head -1)
         echo "APP_PATH=$APP" >> $GITHUB_ENV
         echo "Found: $APP"
+        ls "$APP"
 
-    - name: Sign with ldid (JB entitlements)
+    - name: Sign with ldid for Palera1n roothide
       run: |
-        ldid -Sentitlements.plist "${{ env.APP_PATH }}/VCamJoy"
+        # Sign với entitlements đặc biệt cho roothide
+        cat > ent.plist << 'ENTEOF'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>platform-application</key><true/>
+          <key>com.apple.private.security.no-container</key><true/>
+          <key>com.apple.private.skip-library-validation</key><true/>
+          <key>get-task-allow</key><true/>
+          <key>com.apple.developer.kernel.increased-memory-limit</key><true/>
+          <key>com.apple.private.security.storage.AppDataContainers</key><true/>
+        </dict>
+        </plist>
+        ENTEOF
+        ldid -Sent.plist "${{ env.APP_PATH }}/VCamJoy"
+        echo "Signed OK"
 
     - name: Package as .ipa
       run: |
         mkdir -p Payload
-        cp -r "${{ env.APP_PATH }}" Payload/
+        cp -r "${{ env.APP_PATH }}" Payload/VCamJoy.app
         zip -r VCamJoy.ipa Payload/
         echo "IPA size: $(du -sh VCamJoy.ipa | cut -f1)"
 
-    - name: Upload IPA artifact
+    - name: Upload IPA
       uses: actions/upload-artifact@v4
       with:
         name: VCamJoy-IPA
