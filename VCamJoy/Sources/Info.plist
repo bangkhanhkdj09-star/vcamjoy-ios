@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key><string>com.vcamjoy.app</string>
+  <key>CFBundleName</key><string>VCamJoy</string>
+  <key>CFBundleDisplayName</key><string>VCamJoy</string>
+  <key>CFBundleVersion</key><string>4.0</string>
+  <key>CFBundleShortVersionString</key><string>4.0</string>
+  <key>CFBundleExecutable</key><string>VCamJoy</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleSignature</key><string>????</string>
+  <key>MinimumOSVersion</key><string>15.0</string>
+  <key>NSPrincipalClass</key><string>UIApplication</string>
+  <key>UIApplicationSupportsIndirectInputEvents</key><true/>
+  <key>UILaunchScreen</key><dict/>
+  <key>UIMainStoryboardFile</key><string></string>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>VCamJoy kết nối tới PC qua WiFi để nhận stream video</string>
+  <key>NSCameraUsageDescription</key>
+  <string>VCamJoy cần quyền camera</string>
+  <key>UIApplicationSceneManifest</key>
+  <dict>
+    <key>UIApplicationSupportsMultipleScenes</key><false/>
+  </dict>
+  <key>UIRequiredDeviceCapabilities</key>
+  <array><string>arm64</string></array>
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+    <string>UIInterfaceOrientationPortraitUpsideDown</string>
+    <string>UIInterfaceOrientationLandscapeLeft</string>
+    <string>UIInterfaceOrientationLandscapeRight</string>
+  </array>
+</dict>
+</plist>

@@ -1,4 +1,4 @@
-name: Build VCamJoy Tweak DEB
+name: Build VCamJoy (App + Tweak)
 
 on:
   push:
@@ -24,7 +24,7 @@ jobs:
         run: |
           curl -LO "https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS16.5.sdk.tar.xz"
           tar xf iPhoneOS16.5.sdk.tar.xz -C $HOME/theos/sdks/
-          echo "SDK OK: $(ls $HOME/theos/sdks/)"
+          echo "SDK: $(ls $HOME/theos/sdks/)"
 
       - name: Install ldid
         run: brew install ldid
@@ -40,6 +40,6 @@ jobs:
       - name: Upload DEB
         uses: actions/upload-artifact@v4
         with:
-          name: VCamJoy-Tweak-DEB
+          name: VCamJoy-DEB
           path: packages/*.deb
           retention-days: 7

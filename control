@@ -1,8 +1,8 @@
-Package: com.vcamjoy.tweak
-Name: VCamJoy Tweak
-Version: 3.1
+Package: com.vcamjoy.all
+Name: VCamJoy
+Version: 4.0
 Architecture: iphoneos-arm64
-Description: Virtual Camera for iPhone - hook camera + floating bubble UI
+Description: Virtual Camera - App + Tweak gop lai
 Maintainer: vcamjoy
 Section: Tweaks
-Depends: org.coolstar.libhooker | com.saurik.substrate.safemode
+Depends: mobilesubstrate
