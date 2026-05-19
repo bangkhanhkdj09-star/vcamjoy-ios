@@ -3,7 +3,7 @@ TARGET = iphone:clang:16.5:15.0
 
 include $(THEOS)/makefiles/common.mk
 
-# ── Tweak (hook camera) ──────────────────────────────
+# ── Tweak ────────────────────────────────────────────
 TWEAK_NAME = VCamJoyTweak
 VCamJoyTweak_FILES = Tweak.x
 VCamJoyTweak_FRAMEWORKS = UIKit AVFoundation CoreVideo CoreMedia CoreGraphics CoreImage
@@ -18,4 +18,5 @@ VCamJoy_FILES = VCamJoy/Sources/main.m \
 VCamJoy_FRAMEWORKS = UIKit AVFoundation
 VCamJoy_CFLAGS = -fobjc-arc
 VCamJoy_CODESIGN_FLAGS = -Sentitlements.plist
+VCamJoy_INFO_PLIST = VCamJoy/Sources/Info.plist
 include $(THEOS_MAKE_PATH)/application.mk

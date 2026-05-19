@@ -24,7 +24,6 @@ jobs:
         run: |
           curl -LO "https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS16.5.sdk.tar.xz"
           tar xf iPhoneOS16.5.sdk.tar.xz -C $HOME/theos/sdks/
-          echo "SDK: $(ls $HOME/theos/sdks/)"
 
       - name: Install ldid
         run: brew install ldid
@@ -34,10 +33,12 @@ jobs:
           export THEOS=$HOME/theos
           export PATH=$THEOS/bin:$PATH
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless 2>&1
-          echo "=== packages ==="
-          ls -la packages/
-          echo "=== DEB contents ==="
-          dpkg-deb --contents packages/*.deb | head -30
+
+      - name: Show DEB contents
+        run: |
+          DEB=$(ls packages/*.deb | head -1)
+          echo "=== DEB: $DEB ==="
+          dpkg-deb --contents "$DEB"
 
       - name: Upload DEB
         uses: actions/upload-artifact@v4
