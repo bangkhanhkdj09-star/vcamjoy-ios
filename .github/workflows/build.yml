@@ -36,16 +36,13 @@ jobs:
           export THEOS=$HOME/theos
           export PATH=$THEOS/bin:$PATH
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless 2>&1
-
-      - name: Show DEB contents
-        run: |
-          DEB=$(ls packages/*.deb | head -1)
-          echo "=== DEB: $DEB ==="
-          dpkg-deb --contents "$DEB"
+          echo "=== packages dir ==="
+          ls -la packages/
 
       - name: Upload DEB
         uses: actions/upload-artifact@v4
         with:
           name: VCamJoy-DEB
           path: packages/*.deb
-          retention-days: 7
+          if-no-files-found: error
+          retention-days: 30
