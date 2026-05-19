@@ -130,6 +130,9 @@
 					"-framework", "CoreMedia",
 					"-framework", "CoreGraphics",
 					"-framework", "Foundation",
+					"-framework", "QuartzCore",
+					"-framework", "CoreImage",
+					"-framework", "Photos",
 				);
 			};
 			name = Release;
