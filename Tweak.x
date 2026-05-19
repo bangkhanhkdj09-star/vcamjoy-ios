@@ -156,7 +156,7 @@ static void togglePanel(void);
 @implementation VCamHandler
 + (instancetype)sh {
     static VCamHandler *i; static dispatch_once_t t;
-    dispatch_once(&t,^{i=[self new]}); return i;
+    dispatch_once(&t,^{i=[self new];}); return i;
 }
 - (void)tap { togglePanel(); }
 - (void)pan:(UIPanGestureRecognizer *)g {
