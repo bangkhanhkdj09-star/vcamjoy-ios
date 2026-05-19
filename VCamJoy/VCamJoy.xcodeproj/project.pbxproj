@@ -46,7 +46,7 @@
 			isa = PBXGroup;
 			children = (
 				AA100001, AA100002, AA100003, AA100004,
-				AA100005, AA100006, AA100007, AA100008,
+				AA100005, AA100006, AA100007, AA100008, AA100009, AA100010,
 			);
 			path = Sources;
 			sourceTree = "<group>";
