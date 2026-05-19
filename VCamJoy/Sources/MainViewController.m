@@ -20,6 +20,7 @@
 #define CRED     HEX(0xff3344)
 #define CAMBER   HEX(0xf59e0b)
 #define CMUTED   HEX(0x555566)
+#define CWHITE   [UIColor whiteColor]
 #define CFONT    @"Menlo-Regular"
 #define CFONTB   @"Menlo-Bold"
 static NSString *const kSuite=@"com.vcamjoy.prefs";
