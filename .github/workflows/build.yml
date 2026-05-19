@@ -27,14 +27,15 @@ jobs:
           echo "SDK OK: $(ls $HOME/theos/sdks/)"
 
       - name: Install ldid
-        run: |
-          brew install ldid
+        run: brew install ldid
 
-      - name: Build DEB
+      - name: Build DEB (rootless)
         run: |
           export THEOS=$HOME/theos
           export PATH=$THEOS/bin:$PATH
-          make package FINALPACKAGE=1 2>&1
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless 2>&1
+          echo "=== packages ==="
+          ls packages/
 
       - name: Upload DEB
         uses: actions/upload-artifact@v4
