@@ -7,7 +7,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = VCamJoyTweak
 
 VCamJoyTweak_FILES = Tweak.x
-VCamJoyTweak_FRAMEWORKS = UIKit AVFoundation CoreVideo CoreMedia CoreGraphics
+VCamJoyTweak_FRAMEWORKS = UIKit AVFoundation CoreVideo CoreMedia CoreGraphics CoreImage
 VCamJoyTweak_CFLAGS = -fobjc-arc
 
 include $(THEOS_MAKE_PATH)/tweak.mk

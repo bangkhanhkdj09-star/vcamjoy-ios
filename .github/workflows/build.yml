@@ -1,61 +1,44 @@
-name: Build VCamJoy Tweak DEB
+name: Build VCamJoy Tweak
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-14
-    timeout-minutes: 30
-
+    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Setup Theos
-      run: |
-        export THEOS=$HOME/theos
-        git clone --recursive https://github.com/theos/theos $THEOS
-        echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-        echo "$HOME/theos/bin" >> $GITHUB_PATH
+      - name: Setup Theos
+        uses: actions/cache@v4
+        with:
+          path: /opt/theos
+          key: theos-${{ runner.os }}-v1
 
-    - name: Install SDK
-      run: |
-        curl -LO "https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS16.5.sdk.tar.xz"
-        tar xf iPhoneOS16.5.sdk.tar.xz -C $HOME/theos/sdks/
+      - name: Install Theos
+        run: |
+          if [ ! -d /opt/theos ]; then
+            git clone --recursive https://github.com/theos/theos /opt/theos
+          fi
+          echo "THEOS=/opt/theos" >> $GITHUB_ENV
 
-    - name: Install tools
-      run: brew install ldid dpkg
+      - name: Install SDK
+        run: |
+          mkdir -p /opt/theos/sdks
+          if [ ! -d /opt/theos/sdks/iPhoneOS16.5.sdk ]; then
+            curl -LO https://github.com/theos/sdks/releases/download/master/iPhoneOS16.5.sdk.tar.xz
+            tar -xf iPhoneOS16.5.sdk.tar.xz -C /opt/theos/sdks/
+          fi
 
-    - name: Build dylib
-      run: |
-        export THEOS=$HOME/theos
-        export PATH=$THEOS/bin:$PATH
-        make FINALPACKAGE=1 ARCHS="arm64 arm64e" TARGET=iphone:clang:16.5:15.0 2>&1
+      - name: Build
+        run: |
+          export THEOS=/opt/theos
+          make package FINALPACKAGE=1
 
-    - name: Package roothide DEB
-      run: |
-        DYLIB=$(find .theos -name "VCamJoyTweak.dylib" 2>/dev/null | head -1)
-        if [ -z "$DYLIB" ]; then
-          echo "ERROR: dylib not found"
-          find . -name "*.dylib" 2>/dev/null
-          exit 1
-        fi
-        echo "Found dylib: $DYLIB"
-        mkdir -p pkg/var/jb/Library/MobileSubstrate/DynamicLibraries
-        mkdir -p pkg/DEBIAN
-        cp "$DYLIB" pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/VCamJoyTweak.dylib
-        cp VCamJoyTweak.plist pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/VCamJoyTweak.plist
-        ldid -S pkg/var/jb/Library/MobileSubstrate/DynamicLibraries/VCamJoyTweak.dylib
-        printf "Package: com.vcamjoy.tweak\nName: VCamJoy Tweak\nVersion: 1.0\nArchitecture: iphoneos-arm64\nDescription: Virtual Camera roothide\nMaintainer: vcamjoy\nSection: Tweaks\nTag: compatible_min(roothide)\n" > pkg/DEBIAN/control
-        mkdir -p packages
-        dpkg-deb -Zgzip -b pkg packages/com.vcamjoy.tweak_1.0_roothide.deb
-        echo "Done: $(ls -la packages/)"
-
-    - name: Upload DEB
-      uses: actions/upload-artifact@v4
-      with:
-        name: VCamJoy-Tweak-roothide
-        path: packages/*.deb
-        retention-days: 7
+      - name: Upload DEB
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcamjoy-tweak-deb
+          path: packages/*.deb

@@ -1,473 +1,510 @@
+/*
+ * VCamJoy — Tweak.x (v3.0 — bubble fix)
+ * - Hook AVCaptureVideoDataOutput để inject frame từ MJPEG stream
+ * - Bubble hiện trên UIWindowLevelAlert+100, đảm bảo luôn nổi
+ * - Panel điều khiển: nhập IP, bật/tắt vcam
+ */
+
 #import <AVFoundation/AVFoundation.h>
-#import <CoreMedia/CoreMedia.h>
-#import <CoreVideo/CoreVideo.h>
 #import <UIKit/UIKit.h>
+#import <CoreImage/CoreImage.h>
 
-// ═══════════════════════════════════════
-//  STATE
-// ═══════════════════════════════════════
-static UIImage       *gFrame    = nil;
-static NSLock        *gLock     = nil;
+// ── Globals ──────────────────────────────────────────────────────────────
+static BOOL          gEnabled   = NO;
+static NSString     *gURL       = nil;
+static UIImage      *gFrame     = nil;
+static NSLock       *gLock      = nil;
+static NSURLSession *gSession   = nil;
 static NSMutableData *gBuf      = nil;
-static NSData        *kSOI      = nil;
-static NSData        *kEOI      = nil;
-static BOOL           gEnabled  = NO;
-static NSString      *gURL      = nil;
-static NSURLSession  *gSes      = nil;
-static NSURLSessionDataTask *gTask = nil;
-static NSUInteger     gFpsCount = 0;
-static NSTimeInterval gFpsTime  = 0;
+static NSMapTable   *gProxies   = nil;
 
-// ═══════════════════════════════════════
-//  MJPEG RECEIVER
-// ═══════════════════════════════════════
-@interface VCamReceiver : NSObject <NSURLSessionDataDelegate>
-+ (instancetype)shared;
-- (void)startWithURL:(NSString *)url;
-- (void)stop;
+// Bubble UI
+static UIWindow         *gBubbleWindow   = nil;
+static UIButton         *gBubbleBtn      = nil;
+static UIView           *gPanel          = nil;
+static UISwitch         *gSwitch         = nil;
+static UITextField      *gIPField        = nil;
+static BOOL              gPanelVisible   = NO;
+
+// ── Forward declarations ──────────────────────────────────────────────────
+static void startStream(NSString *urlStr);
+static void stopStream(void);
+static void updateBubbleDot(void);
+
+// ── MJPEG Receiver ────────────────────────────────────────────────────────
+@interface VCamSessionDelegate : NSObject <NSURLSessionDataDelegate>
 @end
+@implementation VCamSessionDelegate
+- (void)URLSession:(NSURLSession *)session
+          dataTask:(NSURLSessionDataTask *)task
+    didReceiveData:(NSData *)data {
+    if (!gBuf) gBuf = [NSMutableData data];
+    [gBuf appendData:data];
 
-@implementation VCamReceiver
-+ (instancetype)shared {
-    static VCamReceiver *s;
-    static dispatch_once_t t;
-    dispatch_once(&t, ^{ s = [self new]; });
-    return s;
-}
-- (instancetype)init {
-    if (!(self = [super init])) return nil;
-    uint8_t s[] = {0xFF,0xD8}, e[] = {0xFF,0xD9};
-    kSOI = [NSData dataWithBytes:s length:2];
-    kEOI = [NSData dataWithBytes:e length:2];
-    gBuf = [NSMutableData data];
-    gLock = [NSLock new];
-    return self;
-}
-- (void)startWithURL:(NSString *)urlStr {
-    [self stop];
-    NSURL *url = [NSURL URLWithString:urlStr];
-    if (!url) return;
-    NSURLSessionConfiguration *cfg = [NSURLSessionConfiguration defaultSessionConfiguration];
-    cfg.timeoutIntervalForRequest = 10;
-    cfg.timeoutIntervalForResource = 86400;
-    gSes = [NSURLSession sessionWithConfiguration:cfg delegate:self delegateQueue:nil];
-    gTask = [gSes dataTaskWithRequest:[NSURLRequest requestWithURL:url]];
-    [gTask resume];
-    NSLog(@"[VCamJoy] Stream started: %@", urlStr);
-}
-- (void)stop {
-    [gTask cancel]; gTask = nil;
-    [gBuf setLength:0];
-}
-- (void)URLSession:(NSURLSession *)s dataTask:(NSURLSessionDataTask *)t
-didReceiveResponse:(NSURLResponse *)r completionHandler:(void(^)(NSURLSessionResponseDisposition))h {
-    [gBuf setLength:0]; h(NSURLSessionResponseAllow);
-}
-- (void)URLSession:(NSURLSession *)s dataTask:(NSURLSessionDataTask *)t didReceiveData:(NSData *)d {
-    [gBuf appendData:d];
+    const uint8_t soi[2] = {0xFF, 0xD8};
+    const uint8_t eoi[2] = {0xFF, 0xD9};
+    NSData *kSOI = [NSData dataWithBytes:soi length:2];
+    NSData *kEOI = [NSData dataWithBytes:eoi length:2];
+
     while (YES) {
-        NSRange r1 = [gBuf rangeOfData:kSOI options:0 range:NSMakeRange(0,gBuf.length)];
-        if (r1.location == NSNotFound) { [gBuf setLength:0]; break; }
-        NSRange sr = NSMakeRange(r1.location+2, gBuf.length-r1.location-2);
-        NSRange r2 = [gBuf rangeOfData:kEOI options:0 range:sr];
-        if (r2.location == NSNotFound) break;
-        NSUInteger end = r2.location+2;
-        NSData *jpeg = [gBuf subdataWithRange:NSMakeRange(r1.location, end-r1.location)];
-        [gBuf replaceBytesInRange:NSMakeRange(0,end) withBytes:NULL length:0];
-        UIImage *img = [UIImage imageWithData:jpeg];
-        if (!img) continue;
-        [gLock lock]; gFrame = img; [gLock unlock];
-        gFpsCount++;
+        NSRange rS = [gBuf rangeOfData:kSOI options:0
+                                 range:NSMakeRange(0, gBuf.length)];
+        if (rS.location == NSNotFound) { [gBuf setLength:0]; break; }
+        NSRange rE = [gBuf rangeOfData:kEOI options:0
+                                 range:NSMakeRange(rS.location, gBuf.length - rS.location)];
+        if (rE.location == NSNotFound) break;
+
+        NSRange jpegRange = NSMakeRange(rS.location, rE.location + 2 - rS.location);
+        NSData *jpegData = [gBuf subdataWithRange:jpegRange];
+        UIImage *img = [UIImage imageWithData:jpegData];
+        if (img) {
+            [gLock lock];
+            gFrame = img;
+            [gLock unlock];
+        }
+        [gBuf replaceBytesInRange:NSMakeRange(0, rE.location + 2) withBytes:NULL length:0];
     }
 }
-- (void)URLSession:(NSURLSession *)s task:(NSURLSessionTask *)t didCompleteWithError:(NSError *)e {
-    if (e && e.code != NSURLErrorCancelled && gEnabled && gURL) {
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC), dispatch_get_main_queue(), ^{
-            [[VCamReceiver shared] startWithURL:gURL];
-        });
-    }
-}
-@end
-
-// ═══════════════════════════════════════
-//  IMAGE → CMSampleBuffer
-// ═══════════════════════════════════════
-static CMSampleBufferRef imageToSampleBuffer(UIImage *image) CF_RETURNS_RETAINED {
-    CGImageRef cg = image.CGImage; if (!cg) return NULL;
-    size_t w = CGImageGetWidth(cg), h = CGImageGetHeight(cg);
-    NSDictionary *a = @{(id)kCVPixelBufferCGImageCompatibilityKey:@YES,
-                        (id)kCVPixelBufferCGBitmapContextCompatibilityKey:@YES};
-    CVPixelBufferRef pb = NULL;
-    if (CVPixelBufferCreate(kCFAllocatorDefault,w,h,kCVPixelFormatType_32BGRA,
-                            (__bridge CFDictionaryRef)a,&pb) != kCVReturnSuccess) return NULL;
-    CVPixelBufferLockBaseAddress(pb,0);
-    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
-    CGContextRef ctx = CGBitmapContextCreate(CVPixelBufferGetBaseAddress(pb),w,h,8,
-        CVPixelBufferGetBytesPerRow(pb),cs,kCGBitmapByteOrder32Little|kCGImageAlphaPremultipliedFirst);
-    CGContextDrawImage(ctx,CGRectMake(0,0,w,h),cg);
-    CGContextRelease(ctx); CGColorSpaceRelease(cs);
-    CVPixelBufferUnlockBaseAddress(pb,0);
-    CMVideoFormatDescriptionRef fd = NULL;
-    CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault,pb,&fd);
-    if (!fd) { CVPixelBufferRelease(pb); return NULL; }
-    CMSampleTimingInfo ti = {CMTimeMake(1,30),
-        CMTimeMakeWithSeconds(CACurrentMediaTime(),90000),kCMTimeInvalid};
-    CMSampleBufferRef sb = NULL;
-    CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault,pb,true,NULL,NULL,fd,&ti,&sb);
-    CFRelease(fd); CVPixelBufferRelease(pb);
-    return sb;
-}
-
-// ═══════════════════════════════════════
-//  BUBBLE WINDOW
-// ═══════════════════════════════════════
-static UIWindow    *gWin    = nil;
-static UIWindow    *gPanel  = nil;
-static UIButton    *gBubble = nil;
-static UITextField *gIPField = nil;
-static UISwitch    *gSwitch  = nil;
-static UILabel     *gStatus  = nil;
-static UIImageView *gPreview = nil;
-static UILabel     *gFpsLabel = nil;
-static UIView      *gDot    = nil;
-static BOOL         gPanelOpen = NO;
-
-static void updateDot(void) {
-    if (!gDot) return;
-    [gLock lock]; BOOL hasFrame = gFrame != nil; [gLock unlock];
-    UIColor *c = gEnabled && hasFrame ?
-        [UIColor colorWithRed:0 green:1 blue:0.53 alpha:1] :
-        (gEnabled ? [UIColor yellowColor] : [UIColor grayColor]);
-    gDot.backgroundColor = c;
-}
-
-static void showPanel(void);
-static void hidePanel(void);
-
-static void showBubble(void) {
-    if (gWin) return;
-    gWin = [[UIWindow alloc] initWithFrame:CGRectMake(10, 120, 64, 64)];
-    gWin.windowLevel = 1000000;
-    gWin.backgroundColor = [UIColor clearColor];
-    gWin.hidden = NO;
-
-    UIViewController *vc = [UIViewController new];
-    vc.view.backgroundColor = [UIColor clearColor];
-    gWin.rootViewController = vc;
-
-    gBubble = [UIButton buttonWithType:UIButtonTypeCustom];
-    gBubble.frame = CGRectMake(0,0,64,64);
-    gBubble.backgroundColor = [UIColor colorWithRed:0.05 green:0.05 blue:0.08 alpha:0.95];
-    gBubble.layer.cornerRadius = 32;
-    gBubble.layer.borderWidth = 2.5;
-    gBubble.layer.borderColor = [UIColor colorWithRed:0 green:1 blue:0.53 alpha:0.8].CGColor;
-    gBubble.layer.shadowColor = [UIColor colorWithRed:0 green:1 blue:0.53 alpha:0.5].CGColor;
-    gBubble.layer.shadowRadius = 8;
-    gBubble.layer.shadowOpacity = 1;
-    gBubble.layer.shadowOffset = CGSizeZero;
-
-    UILabel *icon = [[UILabel alloc] initWithFrame:CGRectMake(0,6,64,30)];
-    icon.text = @"🎥"; icon.textAlignment = NSTextAlignmentCenter;
-    icon.font = [UIFont systemFontOfSize:24];
-    [gBubble addSubview:icon];
-
-    gDot = [[UIView alloc] initWithFrame:CGRectMake(27,40,10,10)];
-    gDot.backgroundColor = [UIColor grayColor];
-    gDot.layer.cornerRadius = 5;
-    [gBubble addSubview:gDot];
-
-    [gBubble addTarget:gBubble action:@selector(vcamTap) forControlEvents:UIControlEventTouchUpInside];
-    UIPanGestureRecognizer *pan = [[UIPanGestureRecognizer alloc]
-        initWithTarget:gBubble action:@selector(vcamDrag:)];
-    [gBubble addGestureRecognizer:pan];
-    [vc.view addSubview:gBubble];
-}
-
-// Category on UIButton for tap/drag
-@interface UIButton (VCam)
-- (void)vcamTap;
-- (void)vcamDrag:(UIPanGestureRecognizer *)pan;
-@end
-@implementation UIButton (VCam)
-- (void)vcamTap {
-    if (gPanelOpen) hidePanel(); else showPanel();
-}
-- (void)vcamDrag:(UIPanGestureRecognizer *)pan {
-    CGPoint t = [pan translationInView:gWin];
-    CGRect f = gWin.frame;
-    CGSize sc = [UIScreen mainScreen].bounds.size;
-    f.origin.x = MAX(0, MIN(sc.width-64, f.origin.x+t.x));
-    f.origin.y = MAX(40, MIN(sc.height-64, f.origin.y+t.y));
-    gWin.frame = f;
-    [pan setTranslation:CGPointZero inView:gWin];
-}
-@end
-
-static void showPanel(void) {
-    if (gPanelOpen) return;
-    gPanelOpen = YES;
-    CGSize sc = [UIScreen mainScreen].bounds.size;
-    CGFloat pw = MIN(sc.width-32, 340);
-    CGFloat ph = 460;
-
-    gPanel = [[UIWindow alloc] initWithFrame:CGRectMake((sc.width-pw)/2,(sc.height-ph)/2,pw,ph)];
-    gPanel.windowLevel = 999999;
-    gPanel.backgroundColor = [UIColor clearColor];
-    gPanel.hidden = NO;
-
-    UIViewController *vc = [UIViewController new];
-    UIView *bg = [[UIView alloc] initWithFrame:CGRectMake(0,0,pw,ph)];
-    bg.backgroundColor = [UIColor colorWithRed:0.05 green:0.05 blue:0.07 alpha:0.97];
-    bg.layer.cornerRadius = 18;
-    bg.layer.borderWidth = 1;
-    bg.layer.borderColor = [UIColor colorWithRed:0 green:1 blue:0.53 alpha:0.3].CGColor;
-    bg.clipsToBounds = YES;
-    vc.view.backgroundColor = [UIColor clearColor];
-    [vc.view addSubview:bg];
-    gPanel.rootViewController = vc;
-
-    CGFloat cw = pw-28; CGFloat y = 14;
-
-    // Title + close
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(14,y,cw-40,30)];
-    title.text = @"VCamJoy";
-    title.textColor = [UIColor colorWithRed:0 green:1 blue:0.53 alpha:1];
-    title.font = [UIFont boldSystemFontOfSize:22];
-    [bg addSubview:title];
-
-    UIButton *close = [UIButton buttonWithType:UIButtonTypeCustom];
-    close.frame = CGRectMake(pw-46,y,32,30);
-    [close setTitle:@"✕" forState:UIControlStateNormal];
-    close.titleLabel.font = [UIFont systemFontOfSize:18];
-    [close setTitleColor:[UIColor grayColor] forState:UIControlStateNormal];
-    [close addTarget:close action:@selector(vcamClose) forControlEvents:UIControlEventTouchUpInside];
-    [bg addSubview:close];
-    y += 38;
-
-    // Preview
-    CGFloat prevH = cw * 9/16;
-    UIView *prevBox = [[UIView alloc] initWithFrame:CGRectMake(14,y,cw,prevH)];
-    prevBox.backgroundColor = [UIColor colorWithWhite:0.04 alpha:1];
-    prevBox.layer.cornerRadius = 10;
-    prevBox.clipsToBounds = YES;
-    [bg addSubview:prevBox];
-
-    gPreview = [[UIImageView alloc] initWithFrame:prevBox.bounds];
-    gPreview.contentMode = UIViewContentModeScaleAspectFill;
-    gPreview.clipsToBounds = YES;
-    [prevBox addSubview:gPreview];
-
-    UILabel *noFeed = [[UILabel alloc] initWithFrame:prevBox.bounds];
-    noFeed.text = @"NO FEED"; noFeed.textColor = [UIColor grayColor];
-    noFeed.textAlignment = NSTextAlignmentCenter;
-    noFeed.font = [UIFont systemFontOfSize:13]; noFeed.tag = 88;
-    [prevBox addSubview:noFeed];
-
-    gFpsLabel = [[UILabel alloc] initWithFrame:CGRectMake(6,4,80,14)];
-    gFpsLabel.textColor = [UIColor colorWithRed:0 green:1 blue:0.53 alpha:1];
-    gFpsLabel.font = [UIFont systemFontOfSize:10];
-    [prevBox addSubview:gFpsLabel];
-    y += prevH + 10;
-
-    // Status
-    gStatus = [[UILabel alloc] initWithFrame:CGRectMake(14,y,cw,16)];
-    gStatus.text = gURL ? @"Đã cấu hình" : @"Nhập IP PC bên dưới";
-    gStatus.textColor = [UIColor grayColor];
-    gStatus.font = [UIFont systemFontOfSize:12];
-    [bg addSubview:gStatus];
-    y += 22;
-
-    // IP field
-    UIView *ipBg = [[UIView alloc] initWithFrame:CGRectMake(14,y,cw,42)];
-    ipBg.backgroundColor = [UIColor colorWithWhite:0.07 alpha:1];
-    ipBg.layer.cornerRadius = 8;
-    ipBg.layer.borderWidth = 1;
-    ipBg.layer.borderColor = [UIColor colorWithRed:1 green:0 blue:0.8 alpha:0.5].CGColor;
-    [bg addSubview:ipBg];
-
-    UILabel *gt = [[UILabel alloc] initWithFrame:CGRectMake(8,0,18,42)];
-    gt.text = @">"; gt.textColor = [UIColor colorWithRed:1 green:0 blue:0.8 alpha:1];
-    gt.font = [UIFont boldSystemFontOfSize:15];
-    [ipBg addSubview:gt];
-
-    gIPField = [[UITextField alloc] initWithFrame:CGRectMake(28,0,cw-34,42)];
-    gIPField.textColor = [UIColor whiteColor];
-    gIPField.font = [UIFont boldSystemFontOfSize:16];
-    gIPField.keyboardType = UIKeyboardTypeURL;
-    gIPField.keyboardAppearance = UIKeyboardAppearanceDark;
-    gIPField.autocorrectionType = UITextAutocorrectionTypeNo;
-    gIPField.autocapitalizationType = UITextAutocapitalizationTypeNone;
-    gIPField.attributedPlaceholder = [[NSAttributedString alloc]
-        initWithString:@"192.168.x.x"
-        attributes:@{NSForegroundColorAttributeName:[UIColor grayColor]}];
-    NSUserDefaults *p = [[NSUserDefaults alloc] initWithSuiteName:@"com.vcamjoy.prefs"];
-    NSString *saved = [p stringForKey:@"streamURL"];
-    if (saved) { NSURL *u=[NSURL URLWithString:saved]; gIPField.text=u.host?:@""; }
-    [ipBg addSubview:gIPField];
-    y += 50;
-
-    // Connect button
-    UIButton *connBtn = [UIButton buttonWithType:UIButtonTypeCustom];
-    connBtn.frame = CGRectMake(14,y,cw,46);
-    connBtn.backgroundColor = [UIColor clearColor];
-    connBtn.layer.borderWidth = 2;
-    connBtn.layer.borderColor = [UIColor colorWithRed:1 green:0 blue:0.8 alpha:1].CGColor;
-    connBtn.layer.cornerRadius = 10;
-    [connBtn setTitle:@"START WIFI MODE _" forState:UIControlStateNormal];
-    [connBtn setTitleColor:[UIColor colorWithRed:1 green:0 blue:0.8 alpha:1] forState:UIControlStateNormal];
-    connBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
-    [connBtn addTarget:connBtn action:@selector(vcamConnect) forControlEvents:UIControlEventTouchUpInside];
-    [bg addSubview:connBtn];
-    y += 54;
-
-    // VCam toggle row
-    UIView *row = [[UIView alloc] initWithFrame:CGRectMake(14,y,cw,48)];
-    row.backgroundColor = [UIColor colorWithWhite:0.07 alpha:1];
-    row.layer.cornerRadius = 10;
-    [bg addSubview:row];
-
-    UILabel *rowLbl = [[UILabel alloc] initWithFrame:CGRectMake(12,0,cw-70,48)];
-    rowLbl.text = @"Bật Camera Ảo";
-    rowLbl.textColor = [UIColor whiteColor];
-    rowLbl.font = [UIFont boldSystemFontOfSize:15];
-    [row addSubview:rowLbl];
-
-    gSwitch = [[UISwitch alloc] init];
-    gSwitch.center = CGPointMake(cw-26, 24);
-    gSwitch.onTintColor = [UIColor colorWithRed:0 green:1 blue:0.53 alpha:1];
-    gSwitch.on = gEnabled;
-    [gSwitch addTarget:gSwitch action:@selector(vcamToggle) forControlEvents:UIControlEventValueChanged];
-    [row addSubview:gSwitch];
-
-    // Start preview timer
-    [NSTimer scheduledTimerWithTimeInterval:1.0/15 repeats:YES block:^(NSTimer *t){
-        if (!gPanelOpen) { [t invalidate]; return; }
-        [gLock lock]; UIImage *img = gFrame; [gLock unlock];
-        if (!img) return;
-        gPreview.image = img;
-        [[gPreview.superview viewWithTag:88] setHidden:YES];
-        gFpsCount++;
-        NSTimeInterval now = CACurrentMediaTime();
-        if (gFpsTime==0) gFpsTime=now;
-        if (now-gFpsTime >= 1.0) {
-            double fps = gFpsCount/(now-gFpsTime);
-            gFpsCount=0; gFpsTime=now;
-            gFpsLabel.text = [NSString stringWithFormat:@"%.0ffps",fps];
-        }
-        updateDot();
-    }];
-}
-
-static void hidePanel(void) {
-    if (!gPanelOpen) return;
-    gPanelOpen = NO;
-    [gIPField resignFirstResponder];
-    gPanel.hidden = YES; gPanel = nil;
-    gPreview=nil; gStatus=nil; gFpsLabel=nil; gSwitch=nil; gIPField=nil;
-}
-
-// Category for panel buttons
-@interface UIButton (VCamPanel)
-- (void)vcamClose;
-- (void)vcamConnect;
-@end
-@implementation UIButton (VCamPanel)
-- (void)vcamClose { hidePanel(); }
-- (void)vcamConnect {
-    [gIPField resignFirstResponder];
-    NSString *ip = [gIPField.text stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
-    if (!ip.length) return;
-    NSString *urlStr = [NSString stringWithFormat:@"http://%@:8080/stream",ip];
-    gURL = urlStr;
-    NSUserDefaults *p = [[NSUserDefaults alloc] initWithSuiteName:@"com.vcamjoy.prefs"];
-    [p setObject:urlStr forKey:@"streamURL"]; [p synchronize];
-    [[VCamReceiver shared] startWithURL:urlStr];
-    if (gStatus) { gStatus.text=@"Đang kết nối..."; gStatus.textColor=[UIColor yellowColor]; }
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,3*NSEC_PER_SEC),dispatch_get_main_queue(),^{
-        [gLock lock]; BOOL ok = gFrame!=nil; [gLock unlock];
-        if (gStatus) {
-            gStatus.text = ok ? [NSString stringWithFormat:@"✓ %@",ip] : @"❌ Không kết nối được";
-            gStatus.textColor = ok ?
-                [UIColor colorWithRed:0 green:1 blue:0.53 alpha:1] : [UIColor redColor];
-        }
-        updateDot();
+- (void)URLSession:(NSURLSession *)session
+              task:(NSURLSessionTask *)task
+didCompleteWithError:(NSError *)error {
+    NSLog(@"[VCamJoy] Stream ended: %@", error.localizedDescription);
+    // Auto-reconnect sau 2 giây nếu vẫn enabled
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 2*NSEC_PER_SEC),
+                   dispatch_get_main_queue(), ^{
+        if (gEnabled && gURL) startStream(gURL);
     });
 }
 @end
 
-@interface UISwitch (VCamToggle)
-- (void)vcamToggle;
-@end
-@implementation UISwitch (VCamToggle)
-- (void)vcamToggle {
-    gEnabled = self.isOn;
-    NSUserDefaults *p = [[NSUserDefaults alloc] initWithSuiteName:@"com.vcamjoy.prefs"];
-    [p setBool:gEnabled forKey:@"vcamEnabled"]; [p synchronize];
-    if (gEnabled && gURL) [[VCamReceiver shared] startWithURL:gURL];
-    else if (!gEnabled) [[VCamReceiver shared] stop];
-    updateDot();
-}
-@end
+static VCamSessionDelegate *gDelegate = nil;
 
-// ═══════════════════════════════════════
-//  HOOK
-// ═══════════════════════════════════════
+static void startStream(NSString *urlStr) {
+    if (!urlStr.length) return;
+    NSURL *url = [NSURL URLWithString:urlStr];
+    if (!url) return;
+    [gSession invalidateAndCancel];
+    if (!gLock)     gLock     = [NSLock new];
+    if (!gBuf)      gBuf      = [NSMutableData data];
+    if (!gDelegate) gDelegate = [VCamSessionDelegate new];
+    NSURLSessionConfiguration *cfg =
+        [NSURLSessionConfiguration defaultSessionConfiguration];
+    cfg.timeoutIntervalForRequest  = 10;
+    cfg.timeoutIntervalForResource = 86400;
+    gSession = [NSURLSession sessionWithConfiguration:cfg
+                                             delegate:gDelegate
+                                        delegateQueue:nil];
+    [[gSession dataTaskWithURL:url] resume];
+    NSLog(@"[VCamJoy] Stream started: %@", urlStr);
+}
+
+static void stopStream(void) {
+    [gSession invalidateAndCancel];
+    gSession = nil;
+    [gLock lock]; gFrame = nil; [gLock unlock];
+    NSLog(@"[VCamJoy] Stream stopped");
+}
+
+// ── VCamProxy ─────────────────────────────────────────────────────────────
 @interface VCamProxy : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
 @property (nonatomic, weak) id<AVCaptureVideoDataOutputSampleBufferDelegate> original;
 @end
+
 @implementation VCamProxy
-- (void)captureOutput:(AVCaptureOutput *)o didOutputSampleBuffer:(CMSampleBufferRef)sb fromConnection:(AVCaptureConnection *)c {
-    if (!gEnabled) { if([self.original respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) [self.original captureOutput:o didOutputSampleBuffer:sb fromConnection:c]; return; }
-    [gLock lock]; UIImage *f=gFrame; [gLock unlock];
-    if (!f) { if([self.original respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) [self.original captureOutput:o didOutputSampleBuffer:sb fromConnection:c]; return; }
-    CMSampleBufferRef fake = imageToSampleBuffer(f);
-    if (fake) { if([self.original respondsToSelector:@selector(captureOutput:didOutputSampleBuffer:fromConnection:)]) [self.original captureOutput:o didOutputSampleBuffer:fake fromConnection:c]; CFRelease(fake); }
+
+static CMSampleBufferRef buildSampleBuffer(UIImage *img) {
+    CGImageRef cgImg = img.CGImage;
+    size_t w = CGImageGetWidth(cgImg);
+    size_t h = CGImageGetHeight(cgImg);
+
+    NSDictionary *attrs = @{
+        (id)kCVPixelBufferCGImageCompatibilityKey:    @YES,
+        (id)kCVPixelBufferCGBitmapContextCompatibilityKey: @YES
+    };
+    CVPixelBufferRef pxBuf = NULL;
+    CVPixelBufferCreate(kCFAllocatorDefault, w, h,
+                        kCVPixelFormatType_32ARGB, (__bridge CFDictionaryRef)attrs, &pxBuf);
+    if (!pxBuf) return NULL;
+
+    CVPixelBufferLockBaseAddress(pxBuf, 0);
+    void *base = CVPixelBufferGetBaseAddress(pxBuf);
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
+    CGContextRef ctx = CGBitmapContextCreate(base, w, h, 8,
+        CVPixelBufferGetBytesPerRow(pxBuf), cs,
+        kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);
+    CGContextDrawImage(ctx, CGRectMake(0,0,w,h), cgImg);
+    CGContextRelease(ctx);
+    CGColorSpaceRelease(cs);
+    CVPixelBufferUnlockBaseAddress(pxBuf, 0);
+
+    CMVideoFormatDescriptionRef fmt = NULL;
+    CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, pxBuf, &fmt);
+    if (!fmt) { CVPixelBufferRelease(pxBuf); return NULL; }
+
+    CMSampleTimingInfo timing = {CMTimeMake(1,30), kCMTimeZero, kCMTimeInvalid};
+    CMSampleBufferRef sb = NULL;
+    CMSampleBufferCreateReadyWithImageBuffer(kCFAllocatorDefault,
+        pxBuf, fmt, &timing, &sb);
+    CFRelease(fmt);
+    CVPixelBufferRelease(pxBuf);
+    return sb;
 }
-- (void)captureOutput:(AVCaptureOutput *)o didDropSampleBuffer:(CMSampleBufferRef)sb fromConnection:(AVCaptureConnection *)c {
-    if([self.original respondsToSelector:@selector(captureOutput:didDropSampleBuffer:fromConnection:)]) [self.original captureOutput:o didDropSampleBuffer:sb fromConnection:c];
+
+- (void)captureOutput:(AVCaptureOutput *)output
+didOutputSampleBuffer:(CMSampleBufferRef)sb
+       fromConnection:(AVCaptureConnection *)conn {
+    if (gEnabled) {
+        [gLock lock];
+        UIImage *img = gFrame;
+        [gLock unlock];
+        if (img) {
+            CMSampleBufferRef fake = buildSampleBuffer(img);
+            if (fake) {
+                [self.original captureOutput:output
+                       didOutputSampleBuffer:fake
+                              fromConnection:conn];
+                CFRelease(fake);
+                return;
+            }
+        }
+    }
+    [self.original captureOutput:output
+           didOutputSampleBuffer:sb
+                  fromConnection:conn];
 }
-- (BOOL)respondsToSelector:(SEL)sel { return [super respondsToSelector:sel]||[self.original respondsToSelector:sel]; }
-- (NSMethodSignature *)methodSignatureForSelector:(SEL)sel { NSMethodSignature *s=[super methodSignatureForSelector:sel]; if(!s)s=[(id)self.original methodSignatureForSelector:sel]; return s; }
-- (void)forwardInvocation:(NSInvocation *)inv { if([self.original respondsToSelector:inv.selector])[inv invokeWithTarget:self.original]; }
+
+- (void)captureOutput:(AVCaptureOutput *)output
+  didDropSampleBuffer:(CMSampleBufferRef)sb
+       fromConnection:(AVCaptureConnection *)conn {
+    if ([self.original respondsToSelector:@selector(captureOutput:didDropSampleBuffer:fromConnection:)])
+        [self.original captureOutput:output didDropSampleBuffer:sb fromConnection:conn];
+}
+
+- (BOOL)respondsToSelector:(SEL)sel {
+    return [super respondsToSelector:sel] || [self.original respondsToSelector:sel];
+}
+- (NSMethodSignature *)methodSignatureForSelector:(SEL)sel {
+    NSMethodSignature *sig = [super methodSignatureForSelector:sel];
+    if (!sig) sig = [(id)self.original methodSignatureForSelector:sel];
+    return sig;
+}
+- (void)forwardInvocation:(NSInvocation *)inv {
+    if ([self.original respondsToSelector:inv.selector])
+        [inv invokeWithTarget:self.original];
+}
+
 @end
 
-static NSMapTable *gProxies = nil;
+// ── Bubble UI ─────────────────────────────────────────────────────────────
+static void updateBubbleDot(void) {
+    if (!gBubbleBtn) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSString *emoji = gEnabled ? @"🟢" : @"🎥";
+        [gBubbleBtn setTitle:emoji forState:UIControlStateNormal];
+    });
+}
+
+static void togglePanel(void);
+static void savePrefs(void);
+
+static void savePrefs(void) {
+    NSUserDefaults *p = [[NSUserDefaults alloc] initWithSuiteName:@"com.vcamjoy.prefs"];
+    [p setBool:gEnabled forKey:@"vcamEnabled"];
+    if (gURL) [p setObject:gURL forKey:@"streamURL"];
+    [p synchronize];
+    // Notify other processes
+    CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
+        CFSTR("com.vcamjoy.prefschanged"), NULL, NULL, YES);
+}
+
+static void togglePanel(void) {
+    if (!gPanel) return;
+    gPanelVisible = !gPanelVisible;
+    [UIView animateWithDuration:0.25 animations:^{
+        gPanel.alpha  = gPanelVisible ? 1.0 : 0.0;
+        gPanel.hidden = NO;
+    } completion:^(BOOL f) {
+        if (!gPanelVisible) gPanel.hidden = YES;
+    }];
+}
+
+static void makeBubble(void) {
+    // Window riêng — level cao hơn alert để luôn nổi
+    gBubbleWindow = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    gBubbleWindow.windowLevel = UIWindowLevelAlert + 100;
+    gBubbleWindow.backgroundColor = [UIColor clearColor];
+    gBubbleWindow.userInteractionEnabled = YES;
+    gBubbleWindow.hidden = NO;
+
+    // Bubble button
+    gBubbleBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    gBubbleBtn.frame = CGRectMake(20, 100, 56, 56);
+    gBubbleBtn.backgroundColor = [UIColor colorWithWhite:0.1 alpha:0.85];
+    gBubbleBtn.layer.cornerRadius = 28;
+    gBubbleBtn.layer.shadowColor  = [UIColor blackColor].CGColor;
+    gBubbleBtn.layer.shadowRadius = 6;
+    gBubbleBtn.layer.shadowOpacity = 0.5;
+    gBubbleBtn.layer.shadowOffset  = CGSizeMake(0,2);
+    gBubbleBtn.titleLabel.font = [UIFont systemFontOfSize:26];
+    [gBubbleBtn setTitle:@"🎥" forState:UIControlStateNormal];
+    [gBubbleBtn addTarget:nil action:@selector(bubbleTapped)
+         forControlEvents:UIControlEventTouchUpInside];
+
+    // Drag gesture
+    UIPanGestureRecognizer *pan =
+        [[UIPanGestureRecognizer alloc] initWithTarget:nil action:@selector(bubblePanned:)];
+    [gBubbleBtn addGestureRecognizer:pan];
+
+    // Panel
+    CGFloat sw = [UIScreen mainScreen].bounds.size.width;
+    gPanel = [[UIView alloc] initWithFrame:CGRectMake(20, 168, sw - 40, 200)];
+    gPanel.backgroundColor = [UIColor colorWithWhite:0.08 alpha:0.92];
+    gPanel.layer.cornerRadius = 16;
+    gPanel.layer.shadowColor  = [UIColor blackColor].CGColor;
+    gPanel.layer.shadowRadius = 10;
+    gPanel.layer.shadowOpacity = 0.6;
+    gPanel.hidden = YES;
+    gPanel.alpha  = 0;
+
+    // Title
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(16,12,sw-72,24)];
+    title.text = @"VCamJoy";
+    title.textColor = [UIColor whiteColor];
+    title.font = [UIFont boldSystemFontOfSize:16];
+    [gPanel addSubview:title];
+
+    // IP TextField
+    gIPField = [[UITextField alloc] initWithFrame:CGRectMake(16,46,sw-72,40)];
+    gIPField.placeholder = @"http://192.168.1.x:8080/stream";
+    gIPField.text = gURL ?: @"";
+    gIPField.textColor = [UIColor whiteColor];
+    gIPField.backgroundColor = [UIColor colorWithWhite:0.2 alpha:1];
+    gIPField.layer.cornerRadius = 8;
+    gIPField.keyboardType = UIKeyboardTypeURL;
+    gIPField.autocorrectionType = UITextAutocorrectionTypeNo;
+    gIPField.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    // Padding
+    UIView *pad = [[UIView alloc] initWithFrame:CGRectMake(0,0,10,1)];
+    gIPField.leftView = pad;
+    gIPField.leftViewMode = UITextFieldViewModeAlways;
+    [gPanel addSubview:gIPField];
+
+    // Connect button
+    UIButton *connectBtn = [UIButton buttonWithType:UIButtonTypeSystem];
+    connectBtn.frame = CGRectMake(16, 98, sw - 72, 40);
+    connectBtn.backgroundColor = [UIColor colorWithRed:0.2 green:0.6 blue:1 alpha:1];
+    connectBtn.layer.cornerRadius = 8;
+    [connectBtn setTitle:@"Kết nối Stream" forState:UIControlStateNormal];
+    [connectBtn setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    connectBtn.titleLabel.font = [UIFont boldSystemFontOfSize:14];
+    [connectBtn addTarget:nil action:@selector(connectTapped)
+         forControlEvents:UIControlEventTouchUpInside];
+    [gPanel addSubview:connectBtn];
+
+    // Switch row
+    UILabel *swLabel = [[UILabel alloc] initWithFrame:CGRectMake(16,150,180,32)];
+    swLabel.text = @"Bật Camera Ảo";
+    swLabel.textColor = [UIColor whiteColor];
+    swLabel.font = [UIFont systemFontOfSize:14];
+    [gPanel addSubview:swLabel];
+
+    gSwitch = [[UISwitch alloc] initWithFrame:CGRectMake(sw-40-66,150,51,31)];
+    gSwitch.on = gEnabled;
+    gSwitch.onTintColor = [UIColor colorWithRed:0.2 green:0.8 blue:0.4 alpha:1];
+    [gSwitch addTarget:nil action:@selector(switchChanged:)
+      forControlEvents:UIControlEventValueChanged];
+    [gPanel addSubview:gSwitch];
+
+    [gBubbleWindow addSubview:gBubbleBtn];
+    [gBubbleWindow addSubview:gPanel];
+    [gBubbleWindow makeKeyAndVisible];
+
+    // Bind actions via ViewController wrapper
+    UIViewController *vc = [UIViewController new];
+    vc.view = [[UIView alloc] initWithFrame:CGRectZero];
+    gBubbleWindow.rootViewController = vc;
+
+    NSLog(@"[VCamJoy] Bubble created on window level %.0f",
+          gBubbleWindow.windowLevel);
+}
+
+// ── Action handler via swizzle target ─────────────────────────────────────
+@interface VCamActionHandler : NSObject
+@end
+@implementation VCamActionHandler
+
++ (instancetype)shared {
+    static VCamActionHandler *s;
+    static dispatch_once_t t;
+    dispatch_once(&t, ^{ s = [self new]; });
+    return s;
+}
+
+- (void)bubbleTapped { togglePanel(); }
+
+- (void)bubblePanned:(UIPanGestureRecognizer *)gr {
+    CGPoint delta = [gr translationInView:gBubbleWindow];
+    CGRect f = gBubbleBtn.frame;
+    f.origin.x += delta.x;
+    f.origin.y += delta.y;
+    // Clamp to screen
+    CGSize sc = [UIScreen mainScreen].bounds.size;
+    f.origin.x = MAX(0, MIN(f.origin.x, sc.width  - f.size.width));
+    f.origin.y = MAX(20, MIN(f.origin.y, sc.height - f.size.height - 20));
+    gBubbleBtn.frame = f;
+    [gr setTranslation:CGPointZero inView:gBubbleWindow];
+
+    // Move panel along
+    if (!gPanel.hidden) {
+        CGRect pf = gPanel.frame;
+        pf.origin.x = MAX(8, MIN(f.origin.x - 8, sc.width - pf.size.width - 8));
+        pf.origin.y = f.origin.y + f.size.height + 10;
+        if (pf.origin.y + pf.size.height > sc.height - 20)
+            pf.origin.y = f.origin.y - pf.size.height - 10;
+        gPanel.frame = pf;
+    }
+}
+
+- (void)connectTapped {
+    NSString *urlStr = [gIPField.text stringByTrimmingCharactersInSet:
+                        [NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    if (!urlStr.length) return;
+    gURL = urlStr;
+    savePrefs();
+    startStream(gURL);
+    [gIPField resignFirstResponder];
+}
+
+- (void)switchChanged:(UISwitch *)sw {
+    gEnabled = sw.on;
+    savePrefs();
+    if (gEnabled) {
+        if (gURL) startStream(gURL);
+    } else {
+        stopStream();
+    }
+    updateBubbleDot();
+}
+
+@end
+
+// Wire up selectors to handler after makeBubble
+static void wireBubbleActions(void) {
+    VCamActionHandler *h = [VCamActionHandler shared];
+    // Re-add targets
+    [gBubbleBtn removeTarget:nil action:NULL
+            forControlEvents:UIControlEventTouchUpInside];
+    [gBubbleBtn addTarget:h action:@selector(bubbleTapped)
+        forControlEvents:UIControlEventTouchUpInside];
+
+    for (UIGestureRecognizer *gr in gBubbleBtn.gestureRecognizers) {
+        if ([gr isKindOfClass:[UIPanGestureRecognizer class]]) {
+            [gr removeTarget:nil action:NULL];
+            [gr addTarget:h action:@selector(bubblePanned:)];
+        }
+    }
+
+    for (UIView *v in gPanel.subviews) {
+        if ([v isKindOfClass:[UIButton class]]) {
+            UIButton *btn = (UIButton *)v;
+            NSString *t = [btn titleForState:UIControlStateNormal];
+            if ([t containsString:@"nối"]) {
+                [btn removeTarget:nil action:NULL
+                 forControlEvents:UIControlEventTouchUpInside];
+                [btn addTarget:h action:@selector(connectTapped)
+                  forControlEvents:UIControlEventTouchUpInside];
+            }
+        }
+        if ([v isKindOfClass:[UISwitch class]]) {
+            UISwitch *sw = (UISwitch *)v;
+            [sw removeTarget:nil action:NULL
+                forControlEvents:UIControlEventValueChanged];
+            [sw addTarget:h action:@selector(switchChanged:)
+           forControlEvents:UIControlEventValueChanged];
+        }
+    }
+}
+
+static void showBubble(void) {
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (gBubbleWindow) {
+            gBubbleWindow.hidden = NO;
+            [gBubbleWindow makeKeyAndVisible];
+            return;
+        }
+        makeBubble();
+        wireBubbleActions();
+        updateBubbleDot();
+        NSLog(@"[VCamJoy] Bubble shown!");
+    });
+}
+
+// ── Theos Hooks ───────────────────────────────────────────────────────────
 %hook AVCaptureVideoDataOutput
-- (void)setSampleBufferDelegate:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)d queue:(dispatch_queue_t)q {
-    if (!d||[d isKindOfClass:[VCamProxy class]]) { %orig; return; }
-    if (!gProxies) gProxies=[NSMapTable weakToStrongObjectsMapTable];
-    VCamProxy *proxy=[gProxies objectForKey:d];
-    if (!proxy) { proxy=[VCamProxy new]; proxy.original=d; [gProxies setObject:proxy forKey:d]; }
-    %orig(proxy,q);
+- (void)setSampleBufferDelegate:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)d
+                          queue:(dispatch_queue_t)q {
+    if (!d || [d isKindOfClass:[VCamProxy class]]) { %orig; return; }
+    if (!gProxies) gProxies = [NSMapTable weakToStrongObjectsMapTable];
+    VCamProxy *proxy = [gProxies objectForKey:d];
+    if (!proxy) {
+        proxy = [VCamProxy new];
+        proxy.original = d;
+        [gProxies setObject:proxy forKey:d];
+    }
+    NSLog(@"[VCamJoy] Hooked output delegate: %@", NSStringFromClass([d class]));
+    %orig(proxy, q);
 }
 %end
 
-// Show bubble when app becomes active
-%hook UIApplication
-- (void)applicationDidBecomeActive:(UIApplication *)app {
+// Hook vào scene/window để show bubble khi app đã có window
+%hook UIScene
+- (void)_activateWithInfo:(id)info {
     %orig;
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW,(int64_t)(0.5*NSEC_PER_SEC)),dispatch_get_main_queue(),^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8*NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
         showBubble();
     });
 }
 %end
 
-static void vcamPrefsChanged(CFNotificationCenterRef c,void *o,CFStringRef n,const void *ob,CFDictionaryRef ui) {
-    NSUserDefaults *p=[[NSUserDefaults alloc]initWithSuiteName:@"com.vcamjoy.prefs"];
+// Fallback: hook UIApplication cho iOS 15 không dùng UIScene đúng cách
+%hook UIApplication
+- (void)applicationDidBecomeActive:(UIApplication *)app {
+    %orig;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0*NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        showBubble();
+    });
+}
+%end
+
+// ── Prefs change notification ─────────────────────────────────────────────
+static void vcamPrefsChanged(CFNotificationCenterRef c, void *o,
+                              CFStringRef n, const void *ob, CFDictionaryRef ui) {
+    NSUserDefaults *p = [[NSUserDefaults alloc] initWithSuiteName:@"com.vcamjoy.prefs"];
     [p synchronize];
-    gEnabled=[p boolForKey:@"vcamEnabled"];
-    NSString *url=[p stringForKey:@"streamURL"];
-    if(url) gURL=url;
-    if(gSwitch) dispatch_async(dispatch_get_main_queue(),^{gSwitch.on=gEnabled;});
-    updateDot();
+    gEnabled = [p boolForKey:@"vcamEnabled"];
+    NSString *url = [p stringForKey:@"streamURL"];
+    if (url) gURL = url;
+    if (gEnabled && gURL) startStream(gURL);
+    else stopStream();
+    dispatch_async(dispatch_get_main_queue(), ^{
+        if (gSwitch) gSwitch.on = gEnabled;
+        updateBubbleDot();
+    });
 }
 
+// ── Constructor ───────────────────────────────────────────────────────────
 %ctor {
-    NSLog(@"[VCamJoy] Tweak loaded!");
-    NSUserDefaults *p=[[NSUserDefaults alloc]initWithSuiteName:@"com.vcamjoy.prefs"];
-    gEnabled=[p boolForKey:@"vcamEnabled"];
-    gURL=[p stringForKey:@"streamURL"];
-    if(gEnabled&&gURL) [[VCamReceiver shared] startWithURL:gURL];
-    CFNotificationCenterAddObserver(CFNotificationCenterGetDarwinNotifyCenter(),NULL,vcamPrefsChanged,
-        CFSTR("com.vcamjoy.prefschanged"),NULL,CFNotificationSuspensionBehaviorDeliverImmediately);
+    NSLog(@"[VCamJoy] Tweak v3 loaded!");
+    NSUserDefaults *p = [[NSUserDefaults alloc] initWithSuiteName:@"com.vcamjoy.prefs"];
+    [p synchronize];
+    gEnabled = [p boolForKey:@"vcamEnabled"];
+    gURL     = [p stringForKey:@"streamURL"];
+    if (gEnabled && gURL) startStream(gURL);
+
+    CFNotificationCenterAddObserver(
+        CFNotificationCenterGetDarwinNotifyCenter(), NULL,
+        vcamPrefsChanged, CFSTR("com.vcamjoy.prefschanged"), NULL,
+        CFNotificationSuspensionBehaviorDeliverImmediately);
 }
