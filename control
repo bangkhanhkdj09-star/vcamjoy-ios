@@ -1,0 +1,9 @@
+Package: com.vcamjoy.tweak
+Name: VCamJoy Tweak
+Version: 1.0
+Architecture: iphoneos-arm64
+Description: Virtual Camera - Hook vao Camera app (palera1n roothide)
+Maintainer: vcamjoy
+Section: Tweaks
+Tag: compatible_min(roothide)
+Depends: firmware (>= 15.0)

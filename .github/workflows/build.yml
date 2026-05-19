@@ -1,4 +1,4 @@
-name: Build VCamJoy IPA
+name: Build VCamJoy Tweak DEB
 
 on:
   push:
@@ -11,71 +11,71 @@ jobs:
     timeout-minutes: 30
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: Select Xcode 15
-      run: sudo xcode-select -s /Applications/Xcode_15.4.app
-
-    - name: Install ldid
-      run: brew install ldid
-
-    - name: Build .app
+    - name: Setup Theos
       run: |
-        xcodebuild \
-          -project VCamJoy/VCamJoy.xcodeproj \
-          -scheme VCamJoy \
-          -configuration Release \
-          -sdk iphoneos \
-          -arch arm64 \
-          CODE_SIGNING_ALLOWED=NO \
-          CODE_SIGNING_REQUIRED=NO \
-          CODE_SIGN_IDENTITY="" \
-          GCC_TREAT_WARNINGS_AS_ERRORS=NO \
-          CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS=NO \
-          ONLY_ACTIVE_ARCH=NO \
-          ENABLE_BITCODE=NO \
-          DEPLOYMENT_POSTPROCESSING=YES \
-          STRIP_INSTALLED_PRODUCT=YES \
-          -derivedDataPath build/
+        export THEOS=$HOME/theos
+        git clone --recursive https://github.com/theos/theos $THEOS
+        echo "THEOS=$HOME/theos" >> $GITHUB_ENV
+        echo "$HOME/theos/bin" >> $GITHUB_PATH
 
-    - name: Find built .app
+    - name: Install SDK
       run: |
-        APP=$(find build -name "VCamJoy.app" | head -1)
-        echo "APP_PATH=$APP" >> $GITHUB_ENV
-        echo "Found: $APP"
-        ls "$APP"
+        curl -LO "https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS16.5.sdk.tar.xz"
+        tar xf iPhoneOS16.5.sdk.tar.xz -C $HOME/theos/sdks/
 
-    - name: Sign with ldid for Palera1n roothide
+    - name: Install tools
+      run: brew install ldid dpkg
+
+    - name: Build dylib
       run: |
-        # Sign với entitlements đặc biệt cho roothide
-        cat > ent.plist << 'ENTEOF'
-        <?xml version="1.0" encoding="UTF-8"?>
-        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-        <plist version="1.0">
-        <dict>
-          <key>platform-application</key><true/>
-          <key>com.apple.private.security.no-container</key><true/>
-          <key>com.apple.private.skip-library-validation</key><true/>
-          <key>get-task-allow</key><true/>
-          <key>com.apple.developer.kernel.increased-memory-limit</key><true/>
-          <key>com.apple.private.security.storage.AppDataContainers</key><true/>
-        </dict>
-        </plist>
-        ENTEOF
-        ldid -Sent.plist "${{ env.APP_PATH }}/VCamJoy"
-        echo "Signed OK"
+        export THEOS=$HOME/theos
+        export PATH=$THEOS/bin:$PATH
+        make FINALPACKAGE=1 2>&1
 
-    - name: Package as .ipa
+    - name: Package roothide DEB manually
       run: |
-        mkdir -p Payload
-        cp -r "${{ env.APP_PATH }}" Payload/VCamJoy.app
-        zip -r VCamJoy.ipa Payload/
-        echo "IPA size: $(du -sh VCamJoy.ipa | cut -f1)"
+        export THEOS=$HOME/theos
+        export PATH=$THEOS/bin:$PATH
+        
+        # Find built dylib
+        DYLIB=$(find .theos -name "*.dylib" | head -1)
+        echo "Dylib: $DYLIB"
+        
+        # Build proper roothide deb structure
+        mkdir -p deb_root/var/jb/Library/MobileSubstrate/DynamicLibraries
+        
+        # Copy dylib
+        cp "$DYLIB" deb_root/var/jb/Library/MobileSubstrate/DynamicLibraries/VCamJoyTweak.dylib
+        
+        # Copy plist filter
+        cp VCamJoyTweak.plist deb_root/var/jb/Library/MobileSubstrate/DynamicLibraries/VCamJoyTweak.plist
+        
+        # Sign
+        ldid -S deb_root/var/jb/Library/MobileSubstrate/DynamicLibraries/VCamJoyTweak.dylib
+        
+        # Create DEBIAN control
+        mkdir -p deb_root/DEBIAN
+        cat > deb_root/DEBIAN/control << 'CTRL'
+        Package: com.vcamjoy.tweak
+        Name: VCamJoy Tweak
+        Version: 1.0
+        Architecture: iphoneos-arm64
+        Description: Virtual Camera roothide
+        Maintainer: vcamjoy
+        Section: Tweaks
+        Tag: compatible_min(roothide)
+        CTRL
+        
+        # Build deb
+        mkdir -p packages
+        dpkg-deb -b deb_root packages/com.vcamjoy.tweak_1.0_roothide.deb
+        echo "DEB: $(ls -la packages/)"
 
-    - name: Upload IPA
+    - name: Upload DEB
       uses: actions/upload-artifact@v4
       with:
-        name: VCamJoy-IPA
-        path: VCamJoy.ipa
+        name: VCamJoy-Tweak-roothide
+        path: packages/*.deb
         retention-days: 7
