@@ -15,7 +15,6 @@ jobs:
 
     - name: Setup Theos
       run: |
-        set -e
         export THEOS=$HOME/theos
         git clone --recursive https://github.com/theos/theos $THEOS
         echo "THEOS=$HOME/theos" >> $GITHUB_ENV
@@ -25,24 +24,19 @@ jobs:
       run: |
         curl -LO "https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS16.5.sdk.tar.xz"
         tar xf iPhoneOS16.5.sdk.tar.xz -C $HOME/theos/sdks/
-        echo "SDK OK: $(ls $HOME/theos/sdks/)"
 
-    - name: Install Toolchain
-      run: |
-        brew install ldid xz
-        # macOS đã có clang cho arm64 iOS
-        echo "Toolchain OK"
+    - name: Install tools
+      run: brew install ldid
 
-    - name: Build DEB
+    - name: Build roothide DEB
       run: |
         export THEOS=$HOME/theos
         export PATH=$THEOS/bin:$PATH
-        make package FINALPACKAGE=1 2>&1
-        ls packages/ || echo "No packages dir"
+        make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=roothide 2>&1
 
     - name: Upload DEB
       uses: actions/upload-artifact@v4
       with:
-        name: VCamJoy-Tweak-DEB
+        name: VCamJoy-Tweak-roothide
         path: packages/*.deb
         retention-days: 7
