@@ -13,6 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Fix permissions
+        run: chmod 755 layout/DEBIAN/postinst
+
       - name: Setup Theos
         run: |
           export THEOS=$HOME/theos
