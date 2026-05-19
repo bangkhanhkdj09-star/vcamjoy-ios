@@ -10,12 +10,12 @@ VCamJoyTweak_FRAMEWORKS = UIKit AVFoundation CoreVideo CoreMedia CoreGraphics Co
 VCamJoyTweak_CFLAGS = -fobjc-arc
 include $(THEOS_MAKE_PATH)/tweak.mk
 
-# ── App (bubble UI chạy nền) ─────────────────────────
+# ── App ──────────────────────────────────────────────
 APPLICATION_NAME = VCamJoy
 VCamJoy_FILES = VCamJoy/Sources/main.m \
                 VCamJoy/Sources/AppDelegate.m \
                 VCamJoy/Sources/MainViewController.m
 VCamJoy_FRAMEWORKS = UIKit AVFoundation
 VCamJoy_CFLAGS = -fobjc-arc
-VCamJoy_INSTALL_PATH = /Applications
+VCamJoy_CODESIGN_FLAGS = -Sentitlements.plist
 include $(THEOS_MAKE_PATH)/application.mk

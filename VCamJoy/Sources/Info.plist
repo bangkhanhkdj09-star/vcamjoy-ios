@@ -9,10 +9,8 @@
   <key>CFBundleShortVersionString</key><string>4.0</string>
   <key>CFBundleExecutable</key><string>VCamJoy</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleSignature</key><string>????</string>
   <key>MinimumOSVersion</key><string>15.0</string>
   <key>NSPrincipalClass</key><string>UIApplication</string>
-  <key>UIApplicationSupportsIndirectInputEvents</key><true/>
   <key>UILaunchScreen</key><dict/>
   <key>UIMainStoryboardFile</key><string></string>
   <key>NSLocalNetworkUsageDescription</key>

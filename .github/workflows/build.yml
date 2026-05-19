@@ -35,7 +35,9 @@ jobs:
           export PATH=$THEOS/bin:$PATH
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless 2>&1
           echo "=== packages ==="
-          ls packages/
+          ls -la packages/
+          echo "=== DEB contents ==="
+          dpkg-deb --contents packages/*.deb | head -30
 
       - name: Upload DEB
         uses: actions/upload-artifact@v4
