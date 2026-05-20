@@ -1,8 +1,8 @@
 {
   Filter = {
-    Classes = (
-      "AVCaptureVideoDataOutput",
-      "SpringBoard"
+    Bundles = (
+      "com.apple.springboard",
+      "com.apple.UIKit"
     );
   };
 }

@@ -79,6 +79,7 @@ static id VCProxyForDelegate(id delegate) {
         proxy = [VCCameraDelegateProxy new];
         proxy.originalDelegate = delegate;
         objc_setAssociatedObject(delegate, VCProxyKey, proxy, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        VCLog([NSString stringWithFormat:@"camera delegate proxied in %@ delegate=%@", NSBundle.mainBundle.bundleIdentifier ?: NSProcessInfo.processInfo.processName, NSStringFromClass([delegate class])]);
     }
     return proxy;
 }

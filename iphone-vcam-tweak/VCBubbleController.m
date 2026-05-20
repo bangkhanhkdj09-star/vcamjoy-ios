@@ -11,14 +11,17 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
 @implementation VCPassthroughWindow
 
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
-    UIView *hit = [super hitTest:point withEvent:event];
-    if (!hit || hit == self || hit == self.rootViewController.view) return nil;
+    if (!self.touchBubble.hidden && self.touchBubble.alpha > 0.01) {
+        CGPoint bubblePoint = [self.touchBubble convertPoint:point fromView:self];
+        UIView *bubbleHit = [self.touchBubble hitTest:bubblePoint withEvent:event];
+        if (bubbleHit) return bubbleHit;
+    }
 
-    CGPoint bubblePoint = [self.touchBubble convertPoint:point fromView:self];
-    if (!self.touchBubble.hidden && [self.touchBubble pointInside:bubblePoint withEvent:event]) return hit;
-
-    CGPoint panelPoint = [self.touchPanel convertPoint:point fromView:self];
-    if (!self.touchPanel.hidden && [self.touchPanel pointInside:panelPoint withEvent:event]) return hit;
+    if (!self.touchPanel.hidden && self.touchPanel.alpha > 0.01) {
+        CGPoint panelPoint = [self.touchPanel convertPoint:point fromView:self];
+        UIView *panelHit = [self.touchPanel hitTest:panelPoint withEvent:event];
+        if (panelHit) return panelHit;
+    }
 
     return nil;
 }
