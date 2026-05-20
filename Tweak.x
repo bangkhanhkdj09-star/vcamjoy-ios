@@ -47,8 +47,8 @@
 
 - (void)handleTap {
     UIAlertController *alert = [UIAlertController
-        alertControllerWithTitle:@"✅ Tweak hoạt động!"
-        message:@"File .deb đã được cài thành công.\nRootHide palera1n iOS 16.7.x"
+        alertControllerWithTitle:@"✅ Tweak hoat dong!"
+        message:@"File .deb da duoc cai thanh cong.\nRootHide palera1n iOS 16.7.x"
         preferredStyle:UIAlertControllerStyleAlert];
     UIAlertAction *ok = [UIAlertAction actionWithTitle:@"OK"
         style:UIAlertActionStyleDefault handler:nil];

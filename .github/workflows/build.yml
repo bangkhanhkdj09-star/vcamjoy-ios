@@ -7,67 +7,50 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # macOS runner có Xcode sẵn -> không cần tải SDK
+    runs-on: macos-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential fakeroot dpkg-dev curl git \
-            clang lld llvm zip unzip
-
       - name: Cache Theos
         uses: actions/cache@v4
         id: cache-theos
         with:
-          path: /opt/theos
-          key: theos-${{ runner.os }}-v2
+          path: ~/theos
+          key: theos-macos-${{ hashFiles('Makefile') }}-v3
 
       - name: Install Theos
         if: steps.cache-theos.outputs.cache-hit != 'true'
         run: |
-          git clone --recursive https://github.com/theos/theos.git /opt/theos
+          git clone --recursive https://github.com/theos/theos.git ~/theos
 
-      - name: Cache iOS SDK
-        uses: actions/cache@v4
-        id: cache-sdk
-        with:
-          path: /opt/theos/sdks/iPhoneOS16.5.sdk
-          key: sdk-ios16-v1
-
-      - name: Download iOS 16.5 SDK
-        if: steps.cache-sdk.outputs.cache-hit != 'true'
+      - name: Link SDK từ Xcode
         run: |
-          mkdir -p /opt/theos/sdks
-          # Dùng ioskit/sdks — nguồn đáng tin cậy nhất cho Theos
-          curl -L --retry 3 \
-            "https://github.com/ioskit/sdks/releases/download/iPhoneOS-16.5/iPhoneOS16.5.sdk.tar.xz" \
-            -o /tmp/sdk.tar.xz
-          file /tmp/sdk.tar.xz
-          tar -xJf /tmp/sdk.tar.xz -C /opt/theos/sdks/
-          ls /opt/theos/sdks/
+          XCODE_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
+          echo "Xcode SDK: $XCODE_SDK"
+          mkdir -p ~/theos/sdks
+          SDK_NAME=$(basename "$XCODE_SDK")
+          ln -sf "$XCODE_SDK" "$HOME/theos/sdks/$SDK_NAME"
+          # Tạo symlink iOS 16.5 nếu version khác
+          ls ~/theos/sdks/
 
-      - name: Set THEOS env
-        run: echo "THEOS=/opt/theos" >> $GITHUB_ENV
-
-      - name: Install Theos NIC template
+      - name: Set Makefile SDK version
         run: |
-          export THEOS=/opt/theos
-          # Đảm bảo theos-jailed và logos được cài
-          cd /opt/theos
-          git submodule update --init --recursive
+          # Lấy version SDK thực tế của Xcode
+          SDK_VER=$(xcrun --sdk iphoneos --show-sdk-version)
+          echo "SDK version: $SDK_VER"
+          # Ghi vào env để dùng ở bước build
+          echo "IPHONE_SDK_VERSION=$SDK_VER" >> $GITHUB_ENV
 
       - name: Build .deb
         run: |
-          export THEOS=/opt/theos
+          export THEOS=~/theos
           make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless 2>&1
 
       - name: List packages
-        run: ls -la packages/ || echo "No packages dir"
+        run: ls -la packages/
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -83,7 +66,7 @@ jobs:
           tag_name: v1.0.${{ github.run_number }}
           name: "MyTweak v1.0.${{ github.run_number }}"
           body: |
-            Build tu dong tu GitHub Actions.
+            Build tu dong tu GitHub Actions (macOS).
             - RootHide palera1n iOS 16.7.11 / 16.7.12
             - Bubble test panel de kiem tra .deb hoat dong
           files: packages/*.deb

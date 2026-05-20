@@ -8,6 +8,7 @@ MyTweak_FILES = Tweak.x
 MyTweak_CFLAGS = -fobjc-arc
 MyTweak_FRAMEWORKS = UIKit Foundation
 
+# RootHide palera1n - dung rootless scheme (/var/jb prefix)
 THEOS_PACKAGE_SCHEME = rootless
 
 include $(THEOS_MAKE_PATH)/tweak.mk
