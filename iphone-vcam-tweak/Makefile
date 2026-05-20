@@ -9,7 +9,7 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME = VCamBubble
 VCamBubble_FILES = Tweak.xm VCFrameProvider.m
 VCamBubble_CFLAGS = -fobjc-arc
-VCamBubble_FRAMEWORKS = UIKit AVFoundation CoreMedia CoreVideo QuartzCore
+VCamBubble_FRAMEWORKS = UIKit AVFoundation CoreMedia CoreVideo QuartzCore VideoToolbox
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 

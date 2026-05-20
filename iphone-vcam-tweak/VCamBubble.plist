@@ -1,5 +1,9 @@
 {
   Filter = {
-    Bundles = ("com.apple.UIKit");
+    Bundles = (
+      "com.apple.mediaserverd",
+      "com.apple.UIKit"
+    );
+    Executables = ("mediaserverd");
   };
 }

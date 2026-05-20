@@ -23,6 +23,7 @@ jobs:
       - name: Build package
         working-directory: iphone-vcam-tweak
         run: |
+          chmod +x postinst postrm
           make clean package THEOS_PACKAGE_SCHEME=rootless
 
       - name: Upload deb

@@ -3,6 +3,9 @@
 #import <UIKit/UIKit.h>
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
+#import <substrate.h>
+#include <stdlib.h>
+#include <string.h>
 #import "VCFrameProvider.h"
 
 static void VCLog(NSString *message) {
@@ -66,6 +69,8 @@ static void VCLog(NSString *message) {
 static const void *VCProxyKey = &VCProxyKey;
 static const void *VCPreviewLayerKey = &VCPreviewLayerKey;
 static const void *VCPreviewTimerKey = &VCPreviewTimerKey;
+static NSMutableSet<NSString *> *VCHookedRuntimeKeys;
+static NSMutableDictionary<NSString *, NSValue *> *VCOriginalIMPs;
 
 static id VCProxyForDelegate(id delegate) {
     if (!delegate) return nil;
@@ -79,10 +84,6 @@ static id VCProxyForDelegate(id delegate) {
     return proxy;
 }
 
-%ctor {
-    VCLog([NSString stringWithFormat:@"hook dylib loaded in %@", NSBundle.mainBundle.bundleIdentifier ?: NSProcessInfo.processInfo.processName]);
-}
-
 %hook AVCaptureVideoDataOutput
 
 - (void)setSampleBufferDelegate:(id)delegate queue:(dispatch_queue_t)sampleBufferCallbackQueue {
@@ -91,6 +92,121 @@ static id VCProxyForDelegate(id delegate) {
 }
 
 %end
+
+static CMSampleBufferRef VCReplacementForSample(CMSampleBufferRef sample) {
+    if (!sample) return nil;
+    return [[VCFrameProvider sharedProvider] newSampleBufferMatching:sample];
+}
+
+static NSString *VCIMPKey(id self, SEL selector) {
+    return [NSString stringWithFormat:@"%@-%@", NSStringFromClass(object_getClass(self)), NSStringFromSelector(selector)];
+}
+
+static IMP VCOriginalIMP(id self, SEL selector) {
+    return [VCOriginalIMPs[VCIMPKey(self, selector)] pointerValue];
+}
+
+static void repl_emitSampleBuffer(id self, SEL _cmd, CMSampleBufferRef sample) {
+    CMSampleBufferRef replacement = VCReplacementForSample(sample);
+    void (*orig)(id, SEL, CMSampleBufferRef) = (void *)VCOriginalIMP(self, _cmd);
+    if (!orig) return;
+    orig(self, _cmd, replacement ?: sample);
+    if (replacement) CFRelease(replacement);
+}
+
+static void repl_setBGRASampleBuffer(id self, SEL _cmd, CMSampleBufferRef sample) {
+    CMSampleBufferRef replacement = VCReplacementForSample(sample);
+    void (*orig)(id, SEL, CMSampleBufferRef) = (void *)VCOriginalIMP(self, _cmd);
+    if (!orig) return;
+    orig(self, _cmd, replacement ?: sample);
+    if (replacement) CFRelease(replacement);
+}
+
+static void repl_setYUVSampleBuffer(id self, SEL _cmd, CMSampleBufferRef sample) {
+    CMSampleBufferRef replacement = VCReplacementForSample(sample);
+    void (*orig)(id, SEL, CMSampleBufferRef) = (void *)VCOriginalIMP(self, _cmd);
+    if (!orig) return;
+    orig(self, _cmd, replacement ?: sample);
+    if (replacement) CFRelease(replacement);
+}
+
+static void repl_renderSampleBufferForInput(id self, SEL _cmd, CMSampleBufferRef sample, id input) {
+    CMSampleBufferRef replacement = VCReplacementForSample(sample);
+    void (*orig)(id, SEL, CMSampleBufferRef, id) = (void *)VCOriginalIMP(self, _cmd);
+    if (!orig) return;
+    orig(self, _cmd, replacement ?: sample, input);
+    if (replacement) CFRelease(replacement);
+}
+
+static CMSampleBufferRef repl_copyNextSampleBuffer(id self, SEL _cmd) {
+    CMSampleBufferRef (*orig)(id, SEL) = (void *)VCOriginalIMP(self, _cmd);
+    if (!orig) return nil;
+    CMSampleBufferRef original = orig(self, _cmd);
+    CMSampleBufferRef replacement = VCReplacementForSample(original);
+    if (replacement) {
+        if (original) CFRelease(original);
+        return replacement;
+    }
+    return original;
+}
+
+static void VCHookSelector(Class cls, SEL selector, IMP replacement, NSString *typeName) {
+    if (!cls || !selector || !class_getInstanceMethod(cls, selector)) return;
+    NSString *key = [NSString stringWithFormat:@"%@-%@", NSStringFromClass(cls), NSStringFromSelector(selector)];
+    if ([VCHookedRuntimeKeys containsObject:key]) return;
+    IMP original = NULL;
+    MSHookMessageEx(cls, selector, replacement, &original);
+    if (original) VCOriginalIMPs[key] = [NSValue valueWithPointer:original];
+    [VCHookedRuntimeKeys addObject:key];
+    VCLog([NSString stringWithFormat:@"runtime hook %@ %@", key, typeName]);
+}
+
+static void VCInstallMediaServerHooks(void) {
+    NSString *process = NSProcessInfo.processInfo.processName;
+    NSString *bundle = NSBundle.mainBundle.bundleIdentifier ?: @"";
+    if (![process isEqualToString:@"mediaserverd"] && ![bundle isEqualToString:@"com.apple.mediaserverd"]) return;
+
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        VCHookedRuntimeKeys = [NSMutableSet set];
+        VCOriginalIMPs = [NSMutableDictionary dictionary];
+    });
+
+    NSArray<NSString *> *classNames = @[
+        @"BWNode",
+        @"BWNodeOutput",
+        @"BWPixelTransferNode",
+        @"BWUBNode",
+        @"BWStillImageScalerNode",
+        @"BWPhotoEncoderNode",
+        @"BWVideoOrientationMetadataNode"
+    ];
+
+    for (NSString *className in classNames) {
+        Class cls = objc_getClass(className.UTF8String);
+        VCHookSelector(cls, @selector(emitSampleBuffer:), (IMP)repl_emitSampleBuffer, @"emit");
+        VCHookSelector(cls, @selector(setBGRASampleBuffer:), (IMP)repl_setBGRASampleBuffer, @"bgra");
+        VCHookSelector(cls, @selector(setYUVSampleBuffer:), (IMP)repl_setYUVSampleBuffer, @"yuv");
+        VCHookSelector(cls, @selector(renderSampleBuffer:forInput:), (IMP)repl_renderSampleBufferForInput, @"render");
+        VCHookSelector(cls, @selector(copyNextSampleBuffer), (IMP)repl_copyNextSampleBuffer, @"copy");
+    }
+
+    int classCount = objc_getClassList(NULL, 0);
+    if (classCount <= 0) return;
+    Class *classes = (Class *)calloc((size_t)classCount, sizeof(Class));
+    classCount = objc_getClassList(classes, classCount);
+    for (int i = 0; i < classCount; i++) {
+        const char *name = class_getName(classes[i]);
+        if (!name || strncmp(name, "BW", 2) != 0) continue;
+        Class cls = classes[i];
+        VCHookSelector(cls, @selector(emitSampleBuffer:), (IMP)repl_emitSampleBuffer, @"emit-scan");
+        VCHookSelector(cls, @selector(setBGRASampleBuffer:), (IMP)repl_setBGRASampleBuffer, @"bgra-scan");
+        VCHookSelector(cls, @selector(setYUVSampleBuffer:), (IMP)repl_setYUVSampleBuffer, @"yuv-scan");
+        VCHookSelector(cls, @selector(renderSampleBuffer:forInput:), (IMP)repl_renderSampleBufferForInput, @"render-scan");
+        VCHookSelector(cls, @selector(copyNextSampleBuffer), (IMP)repl_copyNextSampleBuffer, @"copy-scan");
+    }
+    free(classes);
+}
 
 static void VCInstallPreviewLayer(AVCaptureVideoPreviewLayer *layer) {
     if (!layer) return;
@@ -151,3 +267,13 @@ static void VCInstallPreviewLayer(AVCaptureVideoPreviewLayer *layer) {
 }
 
 %end
+
+%ctor {
+    NSString *process = NSProcessInfo.processInfo.processName;
+    NSString *bundle = NSBundle.mainBundle.bundleIdentifier ?: @"";
+    VCLog([NSString stringWithFormat:@"hook dylib loaded in %@ %@", process, bundle]);
+    VCInstallMediaServerHooks();
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        VCInstallMediaServerHooks();
+    });
+}

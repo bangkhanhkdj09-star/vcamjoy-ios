@@ -1,0 +1,4 @@
+#!/bin/sh
+killall -9 mediaserverd 2>/dev/null || true
+uicache -a 2>/dev/null || true
+exit 0
