@@ -1,4 +1,5 @@
 #import "VCViewController.h"
+#include <stdlib.h>
 
 static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vcambubble.plist";
 
@@ -177,7 +178,9 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
     self.ipField.text = [self displayIPFromBaseURL:self.baseURL];
     [self saveEnabled:YES colorSync:YES];
     self.connectionValue.text = @"WIFI ACTIVE";
+    self.hintLabel.text = @"Restarting camera daemon. Reopen Camera after 2 seconds.";
     [self.wifiButton setTitle:@"STOP WIFI MODE" forState:UIControlStateNormal];
+    [self restartCameraDaemon];
     [self fetchStatusOnce];
     [self fetchSnapshotOnce];
 }
@@ -185,9 +188,17 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
 - (void)stopModes {
     [self saveEnabled:NO colorSync:NO];
     self.connectionValue.text = @"OFFLINE";
+    self.hintLabel.text = @"Open Firefox/Safari webcam test after START WIFI MODE.";
     self.previewImage.image = nil;
     self.previewStatus.hidden = NO;
     [self.wifiButton setTitle:@"START WIFI MODE" forState:UIControlStateNormal];
+    [self restartCameraDaemon];
+}
+
+- (void)restartCameraDaemon {
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        system("killall -9 mediaserverd 2>/dev/null");
+    });
 }
 
 - (void)startPolling {
