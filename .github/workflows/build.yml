@@ -13,12 +13,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install ldid va make
+        run: |
+          brew install ldid make
+          echo "$(brew --prefix make)/libexec/gnubin" >> $GITHUB_PATH
+
       - name: Cache Theos
         uses: actions/cache@v4
         id: cache-theos
         with:
           path: ~/theos
-          key: theos-macos-v4
+          key: theos-macos-v5
 
       - name: Install Theos
         if: steps.cache-theos.outputs.cache-hit != 'true'
@@ -29,10 +34,11 @@ jobs:
         run: |
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
           SDK_VER=$(xcrun --sdk iphoneos --show-sdk-version)
-          echo "Xcode SDK: $SDK_PATH (v$SDK_VER)"
+          echo "SDK: $SDK_PATH (v$SDK_VER)"
           mkdir -p ~/theos/sdks
           ln -sf "$SDK_PATH" "$HOME/theos/sdks/iPhoneOS${SDK_VER}.sdk"
           ls ~/theos/sdks/
+          which ldid && ldid 2>&1 | head -1 || true
 
       - name: Build .deb
         run: |
@@ -57,7 +63,7 @@ jobs:
           name: "MyTweak v1.0.${{ github.run_number }}"
           body: |
             RootHide palera1n iOS 16.7.11 / 16.7.12
-            arm64 + arm64e only build
+            arm64 + arm64e build
           files: packages/*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
