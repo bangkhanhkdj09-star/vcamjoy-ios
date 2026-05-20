@@ -5,6 +5,10 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# Cấp quyền write để tạo Release
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: macos-latest
@@ -34,11 +38,9 @@ jobs:
         run: |
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
           SDK_VER=$(xcrun --sdk iphoneos --show-sdk-version)
-          echo "SDK: $SDK_PATH (v$SDK_VER)"
           mkdir -p ~/theos/sdks
           ln -sf "$SDK_PATH" "$HOME/theos/sdks/iPhoneOS${SDK_VER}.sdk"
           ls ~/theos/sdks/
-          which ldid && ldid 2>&1 | head -1 || true
 
       - name: Build .deb
         run: |
@@ -48,6 +50,7 @@ jobs:
       - name: List packages
         run: ls -la packages/
 
+      # Artifact: tải thẳng từ tab Actions, không cần Release
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -55,15 +58,11 @@ jobs:
           path: packages/*.deb
           if-no-files-found: error
 
+      # Release: chỉ chạy khi push tag v*
       - name: Create Release
-        if: github.ref == 'refs/heads/main'
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v1.0.${{ github.run_number }}
-          name: "MyTweak v1.0.${{ github.run_number }}"
-          body: |
-            RootHide palera1n iOS 16.7.11 / 16.7.12
-            arm64 + arm64e build
           files: packages/*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
