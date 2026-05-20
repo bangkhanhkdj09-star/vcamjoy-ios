@@ -30,12 +30,28 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
 - (void)install {
     if (self.window) return;
 
-    self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    UIWindowScene *targetScene = nil;
+    if (@available(iOS 13.0, *)) {
+        for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+            if (scene.activationState == UISceneActivationStateForegroundActive && [scene isKindOfClass:UIWindowScene.class]) {
+                targetScene = (UIWindowScene *)scene;
+                break;
+            }
+        }
+    }
+
+    if (@available(iOS 13.0, *)) {
+        self.window = [[UIWindow alloc] initWithWindowScene:targetScene ?: (UIWindowScene *)UIApplication.sharedApplication.connectedScenes.anyObject];
+        self.window.frame = UIScreen.mainScreen.bounds;
+    } else {
+        self.window = [[UIWindow alloc] initWithFrame:[UIScreen mainScreen].bounds];
+    }
     self.window.windowLevel = UIWindowLevelAlert + 30;
     self.window.backgroundColor = UIColor.clearColor;
     self.window.hidden = NO;
     self.window.rootViewController = [UIViewController new];
     self.window.userInteractionEnabled = YES;
+    [self.window makeKeyAndVisible];
 
     [self buildStreamOverlay];
     [self buildBubble];
