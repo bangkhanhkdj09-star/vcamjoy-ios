@@ -72,6 +72,10 @@ static const void *VCPreviewTimerKey = &VCPreviewTimerKey;
 static NSMutableSet<NSString *> *VCHookedRuntimeKeys;
 static NSMutableDictionary<NSString *, NSValue *> *VCOriginalIMPs;
 
+typedef void (*VCSampleIMP)(id, SEL, CMSampleBufferRef);
+typedef void (*VCSampleInputIMP)(id, SEL, CMSampleBufferRef, id);
+typedef CMSampleBufferRef (*VCCopySampleIMP)(id, SEL);
+
 static id VCProxyForDelegate(id delegate) {
     if (!delegate) return nil;
     VCCameraDelegateProxy *proxy = objc_getAssociatedObject(delegate, VCProxyKey);
@@ -103,12 +107,12 @@ static NSString *VCIMPKey(id self, SEL selector) {
 }
 
 static IMP VCOriginalIMP(id self, SEL selector) {
-    return [VCOriginalIMPs[VCIMPKey(self, selector)] pointerValue];
+    return (IMP)[VCOriginalIMPs[VCIMPKey(self, selector)] pointerValue];
 }
 
 static void repl_emitSampleBuffer(id self, SEL _cmd, CMSampleBufferRef sample) {
     CMSampleBufferRef replacement = VCReplacementForSample(sample);
-    void (*orig)(id, SEL, CMSampleBufferRef) = (void *)VCOriginalIMP(self, _cmd);
+    VCSampleIMP orig = (VCSampleIMP)VCOriginalIMP(self, _cmd);
     if (!orig) return;
     orig(self, _cmd, replacement ?: sample);
     if (replacement) CFRelease(replacement);
@@ -116,7 +120,7 @@ static void repl_emitSampleBuffer(id self, SEL _cmd, CMSampleBufferRef sample) {
 
 static void repl_setBGRASampleBuffer(id self, SEL _cmd, CMSampleBufferRef sample) {
     CMSampleBufferRef replacement = VCReplacementForSample(sample);
-    void (*orig)(id, SEL, CMSampleBufferRef) = (void *)VCOriginalIMP(self, _cmd);
+    VCSampleIMP orig = (VCSampleIMP)VCOriginalIMP(self, _cmd);
     if (!orig) return;
     orig(self, _cmd, replacement ?: sample);
     if (replacement) CFRelease(replacement);
@@ -124,7 +128,7 @@ static void repl_setBGRASampleBuffer(id self, SEL _cmd, CMSampleBufferRef sample
 
 static void repl_setYUVSampleBuffer(id self, SEL _cmd, CMSampleBufferRef sample) {
     CMSampleBufferRef replacement = VCReplacementForSample(sample);
-    void (*orig)(id, SEL, CMSampleBufferRef) = (void *)VCOriginalIMP(self, _cmd);
+    VCSampleIMP orig = (VCSampleIMP)VCOriginalIMP(self, _cmd);
     if (!orig) return;
     orig(self, _cmd, replacement ?: sample);
     if (replacement) CFRelease(replacement);
@@ -132,14 +136,14 @@ static void repl_setYUVSampleBuffer(id self, SEL _cmd, CMSampleBufferRef sample)
 
 static void repl_renderSampleBufferForInput(id self, SEL _cmd, CMSampleBufferRef sample, id input) {
     CMSampleBufferRef replacement = VCReplacementForSample(sample);
-    void (*orig)(id, SEL, CMSampleBufferRef, id) = (void *)VCOriginalIMP(self, _cmd);
+    VCSampleInputIMP orig = (VCSampleInputIMP)VCOriginalIMP(self, _cmd);
     if (!orig) return;
     orig(self, _cmd, replacement ?: sample, input);
     if (replacement) CFRelease(replacement);
 }
 
 static CMSampleBufferRef repl_copyNextSampleBuffer(id self, SEL _cmd) {
-    CMSampleBufferRef (*orig)(id, SEL) = (void *)VCOriginalIMP(self, _cmd);
+    VCCopySampleIMP orig = (VCCopySampleIMP)VCOriginalIMP(self, _cmd);
     if (!orig) return nil;
     CMSampleBufferRef original = orig(self, _cmd);
     CMSampleBufferRef replacement = VCReplacementForSample(original);
@@ -156,7 +160,7 @@ static void VCHookSelector(Class cls, SEL selector, IMP replacement, NSString *t
     if ([VCHookedRuntimeKeys containsObject:key]) return;
     IMP original = NULL;
     MSHookMessageEx(cls, selector, replacement, &original);
-    if (original) VCOriginalIMPs[key] = [NSValue valueWithPointer:original];
+    if (original) VCOriginalIMPs[key] = [NSValue valueWithPointer:(const void *)original];
     [VCHookedRuntimeKeys addObject:key];
     VCLog([NSString stringWithFormat:@"runtime hook %@ %@", key, typeName]);
 }
