@@ -1,6 +1,11 @@
 #import "VCFrameProvider.h"
 #import <UIKit/UIKit.h>
 #import <CoreVideo/CoreVideo.h>
+#import <arpa/inet.h>
+#import <netinet/in.h>
+#import <sys/socket.h>
+#import <string.h>
+#import <unistd.h>
 
 static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vcambubble.plist";
 
@@ -48,17 +53,62 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
     [self reloadPrefs];
     if (!self.enabled || !self.baseURL.length) return;
 
-    NSString *urlString = [NSString stringWithFormat:@"%@/snapshot.jpg?t=%f", self.baseURL, NSDate.date.timeIntervalSince1970];
-    NSURL *url = [NSURL URLWithString:urlString];
-    if (!url) return;
-
-    NSURLSessionDataTask *task = [NSURLSession.sharedSession dataTaskWithURL:url completionHandler:^(NSData *data, __unused NSURLResponse *response, NSError *error) {
-        if (error || !data.length) return;
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+        NSData *data = [self fetchSnapshotWithSocket];
+        if (!data.length) return;
         UIImage *image = [UIImage imageWithData:data];
         if (!image) return;
         self.latestImage = image;
-    }];
-    [task resume];
+    });
+}
+
+- (NSData *)fetchSnapshotWithSocket {
+    NSURLComponents *components = [NSURLComponents componentsWithString:self.baseURL];
+    NSString *host = components.host;
+    NSInteger port = components.port ? components.port.integerValue : 8080;
+    if (!host.length) return nil;
+
+    int fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd < 0) return nil;
+
+    struct timeval timeout;
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &timeout, sizeof(timeout));
+
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons((uint16_t)port);
+    if (inet_pton(AF_INET, host.UTF8String, &addr.sin_addr) != 1) {
+        close(fd);
+        return nil;
+    }
+
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        close(fd);
+        return nil;
+    }
+
+    NSString *request = [NSString stringWithFormat:@"GET /snapshot.jpg?t=%lld HTTP/1.1\r\nHost: %@\r\nConnection: close\r\n\r\n", (long long)(NSDate.date.timeIntervalSince1970 * 1000), host];
+    NSData *requestData = [request dataUsingEncoding:NSUTF8StringEncoding];
+    send(fd, requestData.bytes, requestData.length, 0);
+
+    NSMutableData *response = [NSMutableData data];
+    uint8_t buffer[8192];
+    ssize_t count = 0;
+    while ((count = recv(fd, buffer, sizeof(buffer), 0)) > 0) {
+        [response appendBytes:buffer length:(NSUInteger)count];
+    }
+    close(fd);
+
+    NSData *separator = [@"\r\n\r\n" dataUsingEncoding:NSUTF8StringEncoding];
+    NSRange headerEnd = [response rangeOfData:separator options:0 range:NSMakeRange(0, response.length)];
+    if (headerEnd.location == NSNotFound) return nil;
+    NSUInteger bodyStart = headerEnd.location + headerEnd.length;
+    if (bodyStart >= response.length) return nil;
+    return [response subdataWithRange:NSMakeRange(bodyStart, response.length - bodyStart)];
 }
 
 - (CVPixelBufferRef)newPixelBufferWithWidth:(size_t)width height:(size_t)height {

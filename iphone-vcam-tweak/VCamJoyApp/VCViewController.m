@@ -1,14 +1,18 @@
 #import "VCViewController.h"
-#import <WebKit/WebKit.h>
 
 static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vcambubble.plist";
 
 @interface VCViewController () <UITextFieldDelegate>
+@property (nonatomic, strong) UIScrollView *scrollView;
+@property (nonatomic, strong) UIView *contentView;
 @property (nonatomic, strong) UITextField *ipField;
 @property (nonatomic, strong) UISwitch *hookSwitch;
 @property (nonatomic, strong) UISwitch *colorSwitch;
-@property (nonatomic, strong) WKWebView *preview;
+@property (nonatomic, strong) UIImageView *previewImage;
 @property (nonatomic, strong) UILabel *statusLabel;
+@property (nonatomic, strong) UILabel *detailLabel;
+@property (nonatomic, strong) UIButton *connectButton;
+@property (nonatomic, strong) NSTimer *pollTimer;
 @property (nonatomic, copy) NSString *baseURL;
 @end
 
@@ -16,93 +20,150 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = [UIColor colorWithRed:0.05 green:0.06 blue:0.06 alpha:1.0];
+    self.view.backgroundColor = [self colorBg];
     [self buildUI];
     [self loadPrefs];
+    [self startPolling];
 }
 
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];
+    self.scrollView.frame = self.view.bounds;
+    self.contentView.frame = CGRectMake(0, 0, self.view.bounds.size.width, 780);
+    self.scrollView.contentSize = self.contentView.bounds.size;
+}
+
+- (UIColor *)colorBg { return [UIColor colorWithRed:0.035 green:0.045 blue:0.045 alpha:1.0]; }
+- (UIColor *)colorCard { return [UIColor colorWithRed:0.105 green:0.12 blue:0.115 alpha:1.0]; }
+- (UIColor *)colorGreen { return [UIColor colorWithRed:0.0 green:1.0 blue:0.10 alpha:1.0]; }
+- (UIColor *)colorMuted { return [UIColor colorWithWhite:0.66 alpha:1.0]; }
+
 - (void)buildUI {
-    UIColor *green = [UIColor colorWithRed:0.0 green:1.0 blue:0.10 alpha:1.0];
-    UIColor *card = [UIColor colorWithRed:0.12 green:0.13 blue:0.13 alpha:1.0];
+    CGFloat width = UIScreen.mainScreen.bounds.size.width;
+    CGFloat pad = 20;
+    CGFloat cardW = width - pad * 2;
 
-    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(22, 58, self.view.bounds.size.width - 44, 48)];
-    title.text = @"NovaCam Local";
-    title.textColor = green;
-    title.font = [UIFont boldSystemFontOfSize:34];
-    [self.view addSubview:title];
+    self.scrollView = [[UIScrollView alloc] initWithFrame:self.view.bounds];
+    self.scrollView.alwaysBounceVertical = YES;
+    [self.view addSubview:self.scrollView];
 
-    self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(24, 112, self.view.bounds.size.width - 48, 28)];
-    self.statusLabel.text = @"[OK] San sang ket noi WiFi";
-    self.statusLabel.textColor = green;
-    self.statusLabel.font = [UIFont boldSystemFontOfSize:17];
-    [self.view addSubview:self.statusLabel];
+    self.contentView = [[UIView alloc] initWithFrame:CGRectMake(0, 0, width, 780)];
+    [self.scrollView addSubview:self.contentView];
 
-    UILabel *wifi = [[UILabel alloc] initWithFrame:CGRectMake(22, 154, self.view.bounds.size.width - 44, 50)];
-    wifi.text = @"WiFi";
+    UILabel *title = [[UILabel alloc] initWithFrame:CGRectMake(pad, 54, cardW, 42)];
+    title.text = @"VCamJoy Local";
+    title.textColor = self.colorGreen;
+    title.font = [UIFont boldSystemFontOfSize:32];
+    [self.contentView addSubview:title];
+
+    self.statusLabel = [[UILabel alloc] initWithFrame:CGRectMake(pad, 100, cardW, 24)];
+    self.statusLabel.text = @"Chua ket noi PC";
+    self.statusLabel.textColor = self.colorGreen;
+    self.statusLabel.font = [UIFont boldSystemFontOfSize:15];
+    [self.contentView addSubview:self.statusLabel];
+
+    self.detailLabel = [[UILabel alloc] initWithFrame:CGRectMake(pad, 126, cardW, 22)];
+    self.detailLabel.text = @"Nhap IP PC, bat Stream ON tren PC roi bam Connect.";
+    self.detailLabel.textColor = self.colorMuted;
+    self.detailLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightMedium];
+    [self.contentView addSubview:self.detailLabel];
+
+    UIView *connectCard = [self card:CGRectMake(pad, 166, cardW, 204)];
+    [self.contentView addSubview:connectCard];
+
+    UILabel *wifi = [[UILabel alloc] initWithFrame:CGRectMake(16, 16, cardW - 32, 48)];
+    wifi.text = @"WiFi Local";
     wifi.textAlignment = NSTextAlignmentCenter;
     wifi.textColor = UIColor.blackColor;
-    wifi.font = [UIFont boldSystemFontOfSize:23];
-    wifi.backgroundColor = green;
+    wifi.font = [UIFont boldSystemFontOfSize:22];
+    wifi.backgroundColor = self.colorGreen;
     wifi.layer.cornerRadius = 12;
     wifi.clipsToBounds = YES;
-    [self.view addSubview:wifi];
+    [connectCard addSubview:wifi];
 
-    UIView *ipCard = [[UIView alloc] initWithFrame:CGRectMake(22, 224, self.view.bounds.size.width - 44, 66)];
-    ipCard.backgroundColor = card;
-    ipCard.layer.cornerRadius = 12;
-    [self.view addSubview:ipCard];
+    UIView *inputShell = [[UIView alloc] initWithFrame:CGRectMake(16, 80, cardW - 32, 52)];
+    inputShell.backgroundColor = [UIColor colorWithWhite:0.05 alpha:1.0];
+    inputShell.layer.cornerRadius = 10;
+    [connectCard addSubview:inputShell];
 
-    self.ipField = [[UITextField alloc] initWithFrame:CGRectMake(16, 12, ipCard.bounds.size.width - 32, 42)];
+    self.ipField = [[UITextField alloc] initWithFrame:CGRectMake(14, 7, inputShell.bounds.size.width - 28, 38)];
     self.ipField.placeholder = @"192.168.1.xx";
-    self.ipField.textColor = green;
-    self.ipField.tintColor = green;
-    self.ipField.font = [UIFont boldSystemFontOfSize:22];
+    self.ipField.textColor = self.colorGreen;
+    self.ipField.tintColor = self.colorGreen;
+    self.ipField.font = [UIFont monospacedDigitSystemFontOfSize:21 weight:UIFontWeightBold];
     self.ipField.keyboardType = UIKeyboardTypeNumbersAndPunctuation;
     self.ipField.autocapitalizationType = UITextAutocapitalizationTypeNone;
     self.ipField.autocorrectionType = UITextAutocorrectionTypeNo;
     self.ipField.delegate = self;
-    [ipCard addSubview:self.ipField];
+    [inputShell addSubview:self.ipField];
 
-    UIButton *connect = [self button:@"Connect" color:[UIColor colorWithRed:0.0 green:0.48 blue:1.0 alpha:1.0] frame:CGRectMake(22, 306, self.view.bounds.size.width - 44, 58)];
-    [connect addTarget:self action:@selector(connect) forControlEvents:UIControlEventTouchUpInside];
-    [self.view addSubview:connect];
+    self.connectButton = [self button:@"Connect & Test" color:[UIColor colorWithRed:0.0 green:0.47 blue:1.0 alpha:1.0] frame:CGRectMake(16, 146, cardW - 32, 42)];
+    [self.connectButton addTarget:self action:@selector(connect) forControlEvents:UIControlEventTouchUpInside];
+    [connectCard addSubview:self.connectButton];
 
-    self.hookSwitch = [self addRow:@"Bat Camera Ao" y:388 color:green];
-    self.colorSwitch = [self addRow:@"ColorSync (60Hz)" y:448 color:green];
+    UIView *switchCard = [self card:CGRectMake(pad, 386, cardW, 142)];
+    [self.contentView addSubview:switchCard];
+    self.hookSwitch = [self addRow:@"Camera Ao" subtitle:@"Thay frame camera bang anh/video tu PC" y:16 parent:switchCard];
+    self.colorSwitch = [self addRow:@"ColorSync" subtitle:@"Dong bo trang thai mau tu PC" y:80 parent:switchCard];
 
-    UIButton *disable = [self button:@"Tat hook khan cap" color:UIColor.redColor frame:CGRectMake(22, 516, self.view.bounds.size.width - 44, 58)];
+    UIButton *disable = [self button:@"Tat hook khan cap" color:UIColor.redColor frame:CGRectMake(pad, 544, cardW, 52)];
     [disable addTarget:self action:@selector(disableAll) forControlEvents:UIControlEventTouchUpInside];
-    [self.view addSubview:disable];
+    [self.contentView addSubview:disable];
 
-    self.preview = [[WKWebView alloc] initWithFrame:CGRectMake(22, 596, self.view.bounds.size.width - 44, 180)];
-    self.preview.backgroundColor = UIColor.blackColor;
-    self.preview.layer.cornerRadius = 12;
-    self.preview.clipsToBounds = YES;
-    [self.view addSubview:self.preview];
+    UILabel *previewTitle = [[UILabel alloc] initWithFrame:CGRectMake(pad, 620, cardW, 24)];
+    previewTitle.text = @"Preview PC";
+    previewTitle.textColor = UIColor.whiteColor;
+    previewTitle.font = [UIFont boldSystemFontOfSize:18];
+    [self.contentView addSubview:previewTitle];
+
+    UIView *previewCard = [self card:CGRectMake(pad, 654, cardW, 190)];
+    previewCard.backgroundColor = UIColor.blackColor;
+    [self.contentView addSubview:previewCard];
+
+    self.previewImage = [[UIImageView alloc] initWithFrame:previewCard.bounds];
+    self.previewImage.contentMode = UIViewContentModeScaleAspectFit;
+    self.previewImage.backgroundColor = UIColor.blackColor;
+    self.previewImage.clipsToBounds = YES;
+    [previewCard addSubview:self.previewImage];
+}
+
+- (UIView *)card:(CGRect)frame {
+    UIView *view = [[UIView alloc] initWithFrame:frame];
+    view.backgroundColor = self.colorCard;
+    view.layer.cornerRadius = 16;
+    view.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.07].CGColor;
+    view.layer.borderWidth = 1;
+    return view;
 }
 
 - (UIButton *)button:(NSString *)title color:(UIColor *)color frame:(CGRect)frame {
     UIButton *button = [UIButton buttonWithType:UIButtonTypeSystem];
     button.frame = frame;
     button.backgroundColor = color;
-    button.layer.cornerRadius = 12;
+    button.layer.cornerRadius = 11;
     [button setTitle:title forState:UIControlStateNormal];
     [button setTitleColor:UIColor.whiteColor forState:UIControlStateNormal];
-    button.titleLabel.font = [UIFont boldSystemFontOfSize:20];
+    button.titleLabel.font = [UIFont boldSystemFontOfSize:17];
     return button;
 }
 
-- (UISwitch *)addRow:(NSString *)title y:(CGFloat)y color:(UIColor *)green {
-    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(24, y, 220, 44)];
+- (UISwitch *)addRow:(NSString *)title subtitle:(NSString *)subtitle y:(CGFloat)y parent:(UIView *)parent {
+    UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(16, y, parent.bounds.size.width - 96, 26)];
     label.text = title;
     label.textColor = UIColor.whiteColor;
-    label.font = [UIFont boldSystemFontOfSize:21];
-    [self.view addSubview:label];
+    label.font = [UIFont boldSystemFontOfSize:19];
+    [parent addSubview:label];
 
-    UISwitch *sw = [[UISwitch alloc] initWithFrame:CGRectMake(self.view.bounds.size.width - 86, y + 4, 58, 32)];
-    sw.onTintColor = green;
+    UILabel *sub = [[UILabel alloc] initWithFrame:CGRectMake(16, y + 27, parent.bounds.size.width - 96, 20)];
+    sub.text = subtitle;
+    sub.textColor = self.colorMuted;
+    sub.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
+    [parent addSubview:sub];
+
+    UISwitch *sw = [[UISwitch alloc] initWithFrame:CGRectMake(parent.bounds.size.width - 68, y + 6, 58, 32)];
+    sw.onTintColor = self.colorGreen;
     [sw addTarget:self action:@selector(savePrefs) forControlEvents:UIControlEventValueChanged];
-    [self.view addSubview:sw];
+    [parent addSubview:sw];
     return sw;
 }
 
@@ -111,26 +172,62 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
     self.ipField.text = [self displayIPFromBaseURL:self.baseURL];
     self.hookSwitch.on = YES;
     [self savePrefs];
-    [self loadPreview];
-    self.statusLabel.text = @"[OK] Dang phat: WiFi Stream";
+    [self fetchStatusOnce];
+    [self fetchSnapshotOnce];
 }
 
 - (void)disableAll {
     self.hookSwitch.on = NO;
     self.colorSwitch.on = NO;
     [self savePrefs];
-    [self.preview loadHTMLString:@"<body style='background:#000'></body>" baseURL:nil];
-    self.statusLabel.text = @"[OFF] Da tat hook";
+    self.previewImage.image = nil;
+    self.statusLabel.text = @"Hook da tat";
+    self.detailLabel.text = @"Mo lai Camera Ao khi can dung.";
 }
 
-- (void)loadPreview {
+- (void)startPolling {
+    [self.pollTimer invalidate];
+    self.pollTimer = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(__unused NSTimer *timer) {
+        [self fetchStatusOnce];
+        [self fetchSnapshotOnce];
+    }];
+}
+
+- (void)fetchStatusOnce {
     if (!self.baseURL.length) return;
-    NSString *streamURL = [NSString stringWithFormat:@"%@/stream?t=%f", self.baseURL, NSDate.date.timeIntervalSince1970];
-    NSString *html = [NSString stringWithFormat:
-        @"<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<style>html,body{margin:0;width:100%%;height:100%%;background:#000;overflow:hidden}"
-        "img{width:100%%;height:100%%;object-fit:contain}</style><img src='%@'>", streamURL];
-    [self.preview loadHTMLString:html baseURL:nil];
+    NSURL *url = [NSURL URLWithString:[self.baseURL stringByAppendingString:@"/status"]];
+    if (!url) return;
+    NSURLSessionDataTask *task = [NSURLSession.sharedSession dataTaskWithURL:url completionHandler:^(NSData *data, __unused NSURLResponse *response, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (error || !data.length) {
+                self.statusLabel.text = @"Khong ket noi duoc PC";
+                self.detailLabel.text = @"Kiem tra WiFi, IP va firewall Windows.";
+                return;
+            }
+            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            BOOL streaming = [json[@"streaming"] boolValue];
+            NSNumber *clients = json[@"clients"];
+            self.statusLabel.text = streaming ? @"[OK] Dang nhan stream PC" : @"PC dang Stream OFF";
+            self.detailLabel.text = [NSString stringWithFormat:@"IP %@ | %@ thiet bi | %@", [self displayIPFromBaseURL:self.baseURL], clients ?: @0, streaming ? @"Camera Ao san sang" : @"Bat Stream ON tren PC"];
+        });
+    }];
+    [task resume];
+}
+
+- (void)fetchSnapshotOnce {
+    if (!self.baseURL.length) return;
+    NSString *urlString = [NSString stringWithFormat:@"%@/snapshot.jpg?t=%lld", self.baseURL, (long long)(NSDate.date.timeIntervalSince1970 * 1000)];
+    NSURL *url = [NSURL URLWithString:urlString];
+    if (!url) return;
+    NSURLSessionDataTask *task = [NSURLSession.sharedSession dataTaskWithURL:url completionHandler:^(NSData *data, __unused NSURLResponse *response, NSError *error) {
+        if (error || !data.length) return;
+        UIImage *image = [UIImage imageWithData:data];
+        if (!image) return;
+        dispatch_async(dispatch_get_main_queue(), ^{
+            self.previewImage.image = image;
+        });
+    }];
+    [task resume];
 }
 
 - (NSString *)normalizedBaseURLFromInput:(NSString *)input {
@@ -152,10 +249,11 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
     if ([url isKindOfClass:NSString.class] && url.length) {
         self.baseURL = url;
         self.ipField.text = [self displayIPFromBaseURL:url];
-        [self loadPreview];
     }
     self.hookSwitch.on = [prefs[@"enabled"] boolValue];
     self.colorSwitch.on = [prefs[@"colorSync"] boolValue] || !prefs[@"colorSync"];
+    [self fetchStatusOnce];
+    [self fetchSnapshotOnce];
 }
 
 - (void)savePrefs {

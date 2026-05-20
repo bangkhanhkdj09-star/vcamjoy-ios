@@ -26,6 +26,10 @@ Push repo len GitHub, vao **Actions**, chay **Build iPhone Tweak Deb**, tai arti
 5. Bam `Connect`, bat `Bat Camera Ao`.
 6. Dong app can dung camera roi mo lai app do.
 
+Neu app bao `PC dang Stream OFF`, bam `Stream ON` tren PC. Ban moi nhat cua PC app se tu bat stream khi upload anh/video.
+
+Luu y: app Camera mac dinh cua Apple co the dung pipeline rieng cua iOS, khong phai luc nao cung di qua `AVCaptureVideoDataOutput`. Hay kiem tra log de biet app nao da duoc hook.
+
 ## Kiem tra hook
 
 Trong NewTerm:
