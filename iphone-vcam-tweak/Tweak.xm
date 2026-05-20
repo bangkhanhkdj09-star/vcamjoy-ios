@@ -6,6 +6,7 @@
 #import <substrate.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dlfcn.h>
 #import "VCFrameProvider.h"
 
 static void VCLog(NSString *message) {
@@ -71,6 +72,7 @@ static const void *VCPreviewLayerKey = &VCPreviewLayerKey;
 static const void *VCPreviewTimerKey = &VCPreviewTimerKey;
 static NSMutableSet<NSString *> *VCHookedRuntimeKeys;
 static NSMutableDictionary<NSString *, NSValue *> *VCOriginalIMPs;
+static int VCHookInstallAttempts = 0;
 
 typedef void (*VCSampleIMP)(id, SEL, CMSampleBufferRef);
 typedef void (*VCSampleInputIMP)(id, SEL, CMSampleBufferRef, id);
@@ -176,6 +178,9 @@ static void VCInstallMediaServerHooks(void) {
         VCOriginalIMPs = [NSMutableDictionary dictionary];
     });
 
+    dlopen("/System/Library/PrivateFrameworks/CMCapture.framework/CMCapture", RTLD_LAZY);
+    dlopen("/System/Library/PrivateFrameworks/CMCaptureCore.framework/CMCaptureCore", RTLD_LAZY);
+
     NSArray<NSString *> *classNames = @[
         @"BWNode",
         @"BWNodeOutput",
@@ -210,6 +215,15 @@ static void VCInstallMediaServerHooks(void) {
         VCHookSelector(cls, @selector(copyNextSampleBuffer), (IMP)repl_copyNextSampleBuffer, @"copy-scan");
     }
     free(classes);
+}
+
+static void VCInstallMediaServerHooksWithRetry(void) {
+    VCHookInstallAttempts += 1;
+    VCInstallMediaServerHooks();
+    if (VCHookInstallAttempts >= 30) return;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
+        VCInstallMediaServerHooksWithRetry();
+    });
 }
 
 static void VCInstallPreviewLayer(AVCaptureVideoPreviewLayer *layer) {
@@ -276,8 +290,5 @@ static void VCInstallPreviewLayer(AVCaptureVideoPreviewLayer *layer) {
     NSString *process = NSProcessInfo.processInfo.processName;
     NSString *bundle = NSBundle.mainBundle.bundleIdentifier ?: @"";
     VCLog([NSString stringWithFormat:@"hook dylib loaded in %@ %@", process, bundle]);
-    VCInstallMediaServerHooks();
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        VCInstallMediaServerHooks();
-    });
+    VCInstallMediaServerHooksWithRetry();
 }

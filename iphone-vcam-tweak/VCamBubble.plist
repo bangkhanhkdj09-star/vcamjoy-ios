@@ -2,6 +2,7 @@
   Filter = {
     Bundles = (
       "com.apple.mediaserverd",
+      "com.apple.lskdd",
       "com.apple.UIKit"
     );
     Executables = ("mediaserverd");

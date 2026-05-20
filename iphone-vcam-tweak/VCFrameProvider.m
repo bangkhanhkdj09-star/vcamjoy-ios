@@ -31,6 +31,13 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
 
 - (BOOL)isEnabled {
     [self reloadPrefs];
+    if (self.enabled && self.baseURL.length > 0 && !self.latestImage) {
+        NSData *data = [self fetchSnapshotWithSocket];
+        if (data.length) {
+            UIImage *image = [UIImage imageWithData:data];
+            if (image) self.latestImage = image;
+        }
+    }
     return self.enabled && self.baseURL.length > 0 && self.latestImage != nil;
 }
 
