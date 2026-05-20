@@ -1,12 +1,22 @@
 #!/bin/bash
-# Chạy uicache sau khi cài để app hiện trên home screen
-if [ -x /usr/bin/uicache ]; then
-    uicache -a
-elif [ -x /var/jb/usr/bin/uicache ]; then
-    /var/jb/usr/bin/uicache -a
+set -x
+exec > /var/mobile/vcamjoy_install.log 2>&1
+
+echo "=== VCamJoy postinst START ==="
+echo "Date: $(date)"
+echo "Listing /var/jb/Applications:"
+ls /var/jb/Applications/ 2>/dev/null || echo "NOT FOUND"
+
+echo "Find VCamJoy.app:"
+find / -name "VCamJoy.app" -maxdepth 8 2>/dev/null
+
+echo "Running uicache..."
+if [ -x /var/jb/usr/bin/uicache ]; then
+    /var/jb/usr/bin/uicache -a && echo "uicache OK"
+elif [ -x /usr/bin/uicache ]; then
+    uicache -a && echo "uicache OK"
+else
+    echo "uicache NOT FOUND"
 fi
-# Respring nhẹ để tweak load
-if [ -x /var/jb/usr/bin/sbreload ]; then
-    /var/jb/usr/bin/sbreload
-fi
-exit 0
+
+echo "=== VCamJoy postinst END ==="
