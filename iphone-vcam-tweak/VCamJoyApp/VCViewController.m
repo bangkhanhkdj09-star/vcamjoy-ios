@@ -1,5 +1,8 @@
 #import "VCViewController.h"
-#include <stdlib.h>
+#include <spawn.h>
+#include <sys/wait.h>
+
+extern char **environ;
 
 static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vcambubble.plist";
 
@@ -197,7 +200,12 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
 
 - (void)restartCameraDaemon {
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_UTILITY, 0), ^{
-        system("killall -9 mediaserverd 2>/dev/null");
+        pid_t pid = 0;
+        char *argv[] = {"/usr/bin/killall", "-9", "mediaserverd", NULL};
+        int status = posix_spawn(&pid, "/usr/bin/killall", NULL, NULL, argv, environ);
+        if (status == 0) {
+            waitpid(pid, NULL, 0);
+        }
     });
 }
 
