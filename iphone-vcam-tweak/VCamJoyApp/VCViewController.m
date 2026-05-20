@@ -67,8 +67,8 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
     [connect addTarget:self action:@selector(connect) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:connect];
 
-    [self addRow:@"Bat Camera Ao" switchView:&_hookSwitch y:388 color:green];
-    [self addRow:@"ColorSync (60Hz)" switchView:&_colorSwitch y:448 color:green];
+    self.hookSwitch = [self addRow:@"Bat Camera Ao" y:388 color:green];
+    self.colorSwitch = [self addRow:@"ColorSync (60Hz)" y:448 color:green];
 
     UIButton *disable = [self button:@"Tat hook khan cap" color:UIColor.redColor frame:CGRectMake(22, 516, self.view.bounds.size.width - 44, 58)];
     [disable addTarget:self action:@selector(disableAll) forControlEvents:UIControlEventTouchUpInside];
@@ -92,7 +92,7 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
     return button;
 }
 
-- (void)addRow:(NSString *)title switchView:(UISwitch **)switchRef y:(CGFloat)y color:(UIColor *)green {
+- (UISwitch *)addRow:(NSString *)title y:(CGFloat)y color:(UIColor *)green {
     UILabel *label = [[UILabel alloc] initWithFrame:CGRectMake(24, y, 220, 44)];
     label.text = title;
     label.textColor = UIColor.whiteColor;
@@ -103,7 +103,7 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
     sw.onTintColor = green;
     [sw addTarget:self action:@selector(savePrefs) forControlEvents:UIControlEventValueChanged];
     [self.view addSubview:sw];
-    *switchRef = sw;
+    return sw;
 }
 
 - (void)connect {
