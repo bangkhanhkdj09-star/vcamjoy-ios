@@ -14,9 +14,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Fix permissions
-        run: |
-          chmod 755 layout/DEBIAN/postinst
-          ls -la layout/DEBIAN/
+        run: chmod 755 layout/DEBIAN/postinst
 
       - name: Setup Theos
         run: |
@@ -33,17 +31,17 @@ jobs:
       - name: Install tools
         run: brew install ldid dpkg
 
-      - name: Build DEB (rootless)
+      - name: Build DEB
         run: |
           export THEOS=$HOME/theos
           export PATH=$THEOS/bin:$PATH
-          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless 2>&1
+          make package FINALPACKAGE=1 2>&1
           ls -la packages/
 
       - name: Show DEB contents
         run: |
           DEB=$(ls packages/*.deb | head -1)
-          echo "=== DEB: $DEB ==="
+          echo "=== $DEB ==="
           dpkg-deb --contents "$DEB"
 
       - name: Upload DEB
