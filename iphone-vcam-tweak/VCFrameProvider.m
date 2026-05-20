@@ -34,6 +34,12 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
     return self.enabled && self.baseURL.length > 0 && self.latestImage != nil;
 }
 
+- (CGImageRef)latestCGImage {
+    [self reloadPrefs];
+    if (!self.enabled || !self.latestImage) return nil;
+    return self.latestImage.CGImage;
+}
+
 - (void)reloadPrefs {
     NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:VCPrefsPath];
     self.enabled = [prefs[@"enabled"] boolValue];

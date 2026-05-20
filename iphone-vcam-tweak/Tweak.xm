@@ -1,4 +1,5 @@
 #import <AVFoundation/AVFoundation.h>
+#import <QuartzCore/QuartzCore.h>
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 #import "VCFrameProvider.h"
@@ -62,6 +63,8 @@ static void VCLog(NSString *message) {
 @end
 
 static const void *VCProxyKey = &VCProxyKey;
+static const void *VCPreviewLayerKey = &VCPreviewLayerKey;
+static const void *VCPreviewTimerKey = &VCPreviewTimerKey;
 
 static id VCProxyForDelegate(id delegate) {
     if (!delegate) return nil;
@@ -84,6 +87,66 @@ static id VCProxyForDelegate(id delegate) {
 - (void)setSampleBufferDelegate:(id)delegate queue:(dispatch_queue_t)sampleBufferCallbackQueue {
     id proxy = VCProxyForDelegate(delegate);
     %orig(proxy ?: delegate, sampleBufferCallbackQueue);
+}
+
+%end
+
+static void VCInstallPreviewLayer(AVCaptureVideoPreviewLayer *layer) {
+    if (!layer) return;
+
+    CALayer *overlay = objc_getAssociatedObject(layer, VCPreviewLayerKey);
+    if (!overlay) {
+        overlay = [CALayer layer];
+        overlay.name = @"VCamJoyPreviewOverlay";
+        overlay.contentsGravity = kCAGravityResizeAspect;
+        overlay.backgroundColor = UIColor.blackColor.CGColor;
+        overlay.masksToBounds = YES;
+        objc_setAssociatedObject(layer, VCPreviewLayerKey, overlay, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [layer addSublayer:overlay];
+        VCLog([NSString stringWithFormat:@"preview layer hooked in %@", NSBundle.mainBundle.bundleIdentifier ?: NSProcessInfo.processInfo.processName]);
+    }
+
+    overlay.frame = layer.bounds;
+    CGImageRef image = [[VCFrameProvider sharedProvider] latestCGImage];
+    overlay.hidden = image == nil;
+    if (image) overlay.contents = (__bridge id)image;
+
+    NSTimer *timer = objc_getAssociatedObject(layer, VCPreviewTimerKey);
+    if (!timer) {
+        timer = [NSTimer scheduledTimerWithTimeInterval:(1.0 / 30.0) repeats:YES block:^(__unused NSTimer *timer) {
+            CALayer *currentOverlay = objc_getAssociatedObject(layer, VCPreviewLayerKey);
+            if (!currentOverlay) return;
+            currentOverlay.frame = layer.bounds;
+            CGImageRef currentImage = [[VCFrameProvider sharedProvider] latestCGImage];
+            currentOverlay.hidden = currentImage == nil;
+            if (currentImage) currentOverlay.contents = (__bridge id)currentImage;
+        }];
+        objc_setAssociatedObject(layer, VCPreviewTimerKey, timer, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+}
+
+%hook AVCaptureVideoPreviewLayer
+
++ (instancetype)layerWithSession:(AVCaptureSession *)session {
+    AVCaptureVideoPreviewLayer *layer = %orig(session);
+    VCInstallPreviewLayer(layer);
+    return layer;
+}
+
+- (instancetype)initWithSession:(AVCaptureSession *)session {
+    self = %orig(session);
+    VCInstallPreviewLayer((AVCaptureVideoPreviewLayer *)self);
+    return self;
+}
+
+- (void)setSession:(AVCaptureSession *)session {
+    %orig(session);
+    VCInstallPreviewLayer((AVCaptureVideoPreviewLayer *)self);
+}
+
+- (void)layoutSublayers {
+    %orig;
+    VCInstallPreviewLayer((AVCaptureVideoPreviewLayer *)self);
 }
 
 %end
