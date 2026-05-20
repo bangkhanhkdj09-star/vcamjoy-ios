@@ -1,9 +1,0 @@
-Package: com.yourname.mytweak
-Name: MyTweak
-Version: 1.0.0
-Architecture: iphoneos-arm64
-Description: Test tweak with bubble panel for RootHide palera1n
-Author: YourName
-Maintainer: YourName
-Section: Tweaks
-Depends: mobilesubstrate | libhooker | substrate

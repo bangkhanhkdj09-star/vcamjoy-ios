@@ -1,0 +1,32 @@
+name: Build iPhone Tweak Deb
+
+on:
+  push:
+    paths:
+      - "iphone-vcam-tweak/**"
+      - ".github/workflows/build-tweak.yml"
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Theos
+        run: |
+          brew install ldid xz
+          git clone --recursive https://github.com/theos/theos.git "$HOME/theos"
+          echo "THEOS=$HOME/theos" >> "$GITHUB_ENV"
+
+      - name: Build package
+        working-directory: iphone-vcam-tweak
+        run: |
+          make clean package THEOS_PACKAGE_SCHEME=rootless
+
+      - name: Upload deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: VCamBubble-deb
+          path: iphone-vcam-tweak/packages/*.deb
