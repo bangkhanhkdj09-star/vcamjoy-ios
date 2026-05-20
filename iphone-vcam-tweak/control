@@ -1,8 +1,8 @@
 Package: local.vcambubble
-Name: VCam Bubble
-Version: 0.1.0
+Name: VCamJoy
+Version: 0.2.0
 Architecture: iphoneos-arm64
-Description: Floating local stream viewer, RGB sync overlay, and AVFoundation camera hook for jailbroken iOS 16.
+Description: VCamJoy control app plus AVFoundation camera hook for jailbroken iOS 16.
 Maintainer: local
 Author: local
 Section: Tweaks

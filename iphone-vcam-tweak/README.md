@@ -1,29 +1,43 @@
-# VCam Bubble Tweak
+# VCamJoy iOS
 
-Tweak rootless cho iOS 16 tao bong bong noi de nhap IP PC, preview `/stream`, sync RGB tu `/status`, va hook `AVCaptureVideoDataOutput` de thay frame camera bang `/snapshot.jpg` tu PC.
+Package nay gom:
 
-## Build
+- `VCamJoy.app`: app dieu khien tren man hinh chinh, dung de nhap IP PC, xem preview stream, bat/tat hook camera.
+- `VCamBubble.dylib`: tweak hook `AVCaptureVideoDataOutput`, doc frame tu PC `/snapshot.jpg`.
+
+Khong con bong bong SpringBoard, nen khong chan vuot/tap va khong lam lag giao dien he thong.
+
+## Build local
 
 ```bash
-make package
+make package THEOS_PACKAGE_SCHEME=rootless
 ```
-
-## Install
-
-```bash
-make install
-```
-
-Nếu dùng RootHide, build rootless trước rồi chuyển/cài theo workflow RootHide bạn đang dùng.
 
 ## GitHub build
 
-Repo co san workflow `.github/workflows/build-tweak.yml`. Push len GitHub, vao **Actions**, chay **Build iPhone Tweak Deb**, roi tai artifact `VCamBubble-deb`.
+Push repo len GitHub, vao **Actions**, chay **Build iPhone Tweak Deb**, tai artifact `VCamBubble-deb`.
 
-## Files
+## Cach dung
 
-- `Tweak.xm`: tao bubble trong SpringBoard va hook `AVCaptureVideoDataOutput`.
-- `VCBubbleController.m`: bubble, panel nhap IP, web view stream, luu prefs.
-- `VCFrameProvider.m`: tai `/snapshot.jpg`, tao `CMSampleBufferRef` thay frame camera.
-- `Makefile`: cấu hình Theos rootless.
-- `control`: metadata gói `.deb`.
+1. Chay PC app, lay IP dang `192.168.1.xx`.
+2. Cai `.deb` va `sbreload`.
+3. Mo app **VCamJoy** tren iPhone.
+4. Nhap IP, vi du `192.168.1.17`.
+5. Bam `Connect`, bat `Bat Camera Ao`.
+6. Dong app can dung camera roi mo lai app do.
+
+## Kiem tra hook
+
+Trong NewTerm:
+
+```bash
+cat /var/mobile/Library/Logs/VCamBubble.log
+```
+
+Neu hook vao app thanh cong se co dong:
+
+```text
+camera delegate proxied in ...
+```
+
+Neu khong co dong nay, app do khong di qua `AVCaptureVideoDataOutput` hoac tweak chua inject vao app.

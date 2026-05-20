@@ -1,7 +1,6 @@
 #import <AVFoundation/AVFoundation.h>
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
-#import "VCBubbleController.h"
 #import "VCFrameProvider.h"
 
 static void VCLog(NSString *message) {
@@ -16,14 +15,6 @@ static void VCLog(NSString *message) {
     [handle seekToEndOfFile];
     [handle writeData:data];
     [handle closeFile];
-}
-
-static void VCInstallBubbleIfNeeded(void) {
-    if (![NSBundle.mainBundle.bundleIdentifier isEqualToString:@"com.apple.springboard"]) return;
-    VCLog(@"install bubble requested");
-    dispatch_async(dispatch_get_main_queue(), ^{
-        [[VCBubbleController sharedController] install];
-    });
 }
 
 @interface VCCameraDelegateProxy : NSObject
@@ -84,23 +75,8 @@ static id VCProxyForDelegate(id delegate) {
     return proxy;
 }
 
-%hook SpringBoard
-
-- (void)applicationDidFinishLaunching:(id)application {
-    %orig;
-    VCLog(@"SpringBoard did finish launching");
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        VCInstallBubbleIfNeeded();
-    });
-}
-
-%end
-
 %ctor {
-    VCLog([NSString stringWithFormat:@"loaded in %@", NSBundle.mainBundle.bundleIdentifier ?: NSProcessInfo.processInfo.processName]);
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        VCInstallBubbleIfNeeded();
-    });
+    VCLog([NSString stringWithFormat:@"hook dylib loaded in %@", NSBundle.mainBundle.bundleIdentifier ?: NSProcessInfo.processInfo.processName]);
 }
 
 %hook AVCaptureVideoDataOutput
