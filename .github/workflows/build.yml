@@ -7,7 +7,6 @@ on:
 
 jobs:
   build:
-    # macOS runner có Xcode sẵn -> không cần tải SDK
     runs-on: macos-latest
 
     steps:
@@ -19,30 +18,21 @@ jobs:
         id: cache-theos
         with:
           path: ~/theos
-          key: theos-macos-${{ hashFiles('Makefile') }}-v3
+          key: theos-macos-v4
 
       - name: Install Theos
         if: steps.cache-theos.outputs.cache-hit != 'true'
         run: |
           git clone --recursive https://github.com/theos/theos.git ~/theos
 
-      - name: Link SDK từ Xcode
+      - name: Link iOS SDK tu Xcode
         run: |
-          XCODE_SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-          echo "Xcode SDK: $XCODE_SDK"
-          mkdir -p ~/theos/sdks
-          SDK_NAME=$(basename "$XCODE_SDK")
-          ln -sf "$XCODE_SDK" "$HOME/theos/sdks/$SDK_NAME"
-          # Tạo symlink iOS 16.5 nếu version khác
-          ls ~/theos/sdks/
-
-      - name: Set Makefile SDK version
-        run: |
-          # Lấy version SDK thực tế của Xcode
+          SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
           SDK_VER=$(xcrun --sdk iphoneos --show-sdk-version)
-          echo "SDK version: $SDK_VER"
-          # Ghi vào env để dùng ở bước build
-          echo "IPHONE_SDK_VERSION=$SDK_VER" >> $GITHUB_ENV
+          echo "Xcode SDK: $SDK_PATH (v$SDK_VER)"
+          mkdir -p ~/theos/sdks
+          ln -sf "$SDK_PATH" "$HOME/theos/sdks/iPhoneOS${SDK_VER}.sdk"
+          ls ~/theos/sdks/
 
       - name: Build .deb
         run: |
@@ -66,9 +56,8 @@ jobs:
           tag_name: v1.0.${{ github.run_number }}
           name: "MyTweak v1.0.${{ github.run_number }}"
           body: |
-            Build tu dong tu GitHub Actions (macOS).
-            - RootHide palera1n iOS 16.7.11 / 16.7.12
-            - Bubble test panel de kiem tra .deb hoat dong
+            RootHide palera1n iOS 16.7.11 / 16.7.12
+            arm64 + arm64e only build
           files: packages/*.deb
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
