@@ -16,39 +16,58 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential fakeroot dpkg-dev curl git
+          sudo apt-get install -y \
+            build-essential fakeroot dpkg-dev curl git \
+            clang lld llvm zip unzip
 
-      - name: Setup Theos cache
+      - name: Cache Theos
         uses: actions/cache@v4
+        id: cache-theos
         with:
           path: /opt/theos
-          key: theos-${{ runner.os }}-${{ hashFiles('Makefile') }}
-          restore-keys: |
-            theos-${{ runner.os }}-
+          key: theos-${{ runner.os }}-v2
 
       - name: Install Theos
+        if: steps.cache-theos.outputs.cache-hit != 'true'
         run: |
-          if [ ! -d "/opt/theos" ]; then
-            git clone --recursive https://github.com/theos/theos.git /opt/theos
-          fi
-          echo "THEOS=/opt/theos" >> $GITHUB_ENV
+          git clone --recursive https://github.com/theos/theos.git /opt/theos
 
-      - name: Download iOS 16 SDK
+      - name: Cache iOS SDK
+        uses: actions/cache@v4
+        id: cache-sdk
+        with:
+          path: /opt/theos/sdks/iPhoneOS16.5.sdk
+          key: sdk-ios16-v1
+
+      - name: Download iOS 16.5 SDK
+        if: steps.cache-sdk.outputs.cache-hit != 'true'
         run: |
           mkdir -p /opt/theos/sdks
-          if [ ! -d "/opt/theos/sdks/iPhoneOS16.5.sdk" ]; then
-            curl -L https://github.com/theos/sdks/releases/download/iOSTV-17.5_tvOS-17.5/iPhoneOS16.5.sdk.tar.xz \
-              | tar -xJf - -C /opt/theos/sdks/
-          fi
+          # Dùng ioskit/sdks — nguồn đáng tin cậy nhất cho Theos
+          curl -L --retry 3 \
+            "https://github.com/ioskit/sdks/releases/download/iPhoneOS-16.5/iPhoneOS16.5.sdk.tar.xz" \
+            -o /tmp/sdk.tar.xz
+          file /tmp/sdk.tar.xz
+          tar -xJf /tmp/sdk.tar.xz -C /opt/theos/sdks/
+          ls /opt/theos/sdks/
 
-      - name: Install LLVM / Clang arm64
+      - name: Set THEOS env
+        run: echo "THEOS=/opt/theos" >> $GITHUB_ENV
+
+      - name: Install Theos NIC template
         run: |
-          sudo apt-get install -y clang lld llvm
+          export THEOS=/opt/theos
+          # Đảm bảo theos-jailed và logos được cài
+          cd /opt/theos
+          git submodule update --init --recursive
 
       - name: Build .deb
         run: |
           export THEOS=/opt/theos
-          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless 2>&1
+
+      - name: List packages
+        run: ls -la packages/ || echo "No packages dir"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
