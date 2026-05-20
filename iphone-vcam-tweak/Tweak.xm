@@ -39,7 +39,8 @@
     CMSampleBufferRef replacement = [[VCFrameProvider sharedProvider] newSampleBufferMatching:sampleBuffer];
     CMSampleBufferRef bufferToSend = replacement ?: sampleBuffer;
 
-    void (*invoke)(id, SEL, AVCaptureOutput *, CMSampleBufferRef, AVCaptureConnection *) = (void *)[delegate methodForSelector:_cmd];
+    void (*invoke)(id, SEL, AVCaptureOutput *, CMSampleBufferRef, AVCaptureConnection *) =
+        (void (*)(id, SEL, AVCaptureOutput *, CMSampleBufferRef, AVCaptureConnection *))[delegate methodForSelector:_cmd];
     invoke(delegate, _cmd, output, bufferToSend, connection);
 
     if (replacement) CFRelease(replacement);
