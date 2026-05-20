@@ -1,8 +1,0 @@
-Package: com.vcamjoy.all
-Name: VCamJoy
-Version: 4.0
-Architecture: iphoneos-arm64
-Description: Virtual Camera - App + Tweak gop lai
-Maintainer: vcamjoy
-Section: Tweaks
-Depends: mobilesubstrate

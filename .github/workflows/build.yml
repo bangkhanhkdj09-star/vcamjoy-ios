@@ -1,53 +1,72 @@
-name: Build VCamJoy (App + Tweak)
+name: Build DEB
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: macos-14
-    timeout-minutes: 30
+    runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Fix permissions
-        run: chmod 755 layout/DEBIAN/postinst
-
-      - name: Setup Theos
+      - name: Install dependencies
         run: |
-          export THEOS=$HOME/theos
-          echo "THEOS=$HOME/theos" >> $GITHUB_ENV
-          echo "$HOME/theos/bin" >> $GITHUB_PATH
-          git clone --recursive https://github.com/theos/theos $HOME/theos
+          sudo apt-get update
+          sudo apt-get install -y build-essential fakeroot dpkg-dev curl git
 
-      - name: Install SDK
+      - name: Setup Theos cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/theos
+          key: theos-${{ runner.os }}-${{ hashFiles('Makefile') }}
+          restore-keys: |
+            theos-${{ runner.os }}-
+
+      - name: Install Theos
         run: |
-          curl -LO "https://github.com/theos/sdks/releases/download/master-146e41f/iPhoneOS16.5.sdk.tar.xz"
-          tar xf iPhoneOS16.5.sdk.tar.xz -C $HOME/theos/sdks/
+          if [ ! -d "/opt/theos" ]; then
+            git clone --recursive https://github.com/theos/theos.git /opt/theos
+          fi
+          echo "THEOS=/opt/theos" >> $GITHUB_ENV
 
-      - name: Install tools
-        run: brew install ldid dpkg
-
-      - name: Build DEB
+      - name: Download iOS 16 SDK
         run: |
-          export THEOS=$HOME/theos
-          export PATH=$THEOS/bin:$PATH
-          make package FINALPACKAGE=1 2>&1
-          ls -la packages/
+          mkdir -p /opt/theos/sdks
+          if [ ! -d "/opt/theos/sdks/iPhoneOS16.5.sdk" ]; then
+            curl -L https://github.com/theos/sdks/releases/download/iOSTV-17.5_tvOS-17.5/iPhoneOS16.5.sdk.tar.xz \
+              | tar -xJf - -C /opt/theos/sdks/
+          fi
 
-      - name: Show DEB contents
+      - name: Install LLVM / Clang arm64
         run: |
-          DEB=$(ls packages/*.deb | head -1)
-          echo "=== $DEB ==="
-          dpkg-deb --contents "$DEB"
+          sudo apt-get install -y clang lld llvm
 
-      - name: Upload DEB
+      - name: Build .deb
+        run: |
+          export THEOS=/opt/theos
+          make package FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VCamJoy-DEB
+          name: MyTweak-deb
           path: packages/*.deb
           if-no-files-found: error
-          retention-days: 30
+
+      - name: Create Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: "MyTweak v1.0.${{ github.run_number }}"
+          body: |
+            Build tu dong tu GitHub Actions.
+            - RootHide palera1n iOS 16.7.11 / 16.7.12
+            - Bubble test panel de kiem tra .deb hoat dong
+          files: packages/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
