@@ -132,7 +132,7 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
     UIColor *dark = [UIColor colorWithRed:0.06 green:0.07 blue:0.07 alpha:0.96];
     UIColor *card = [UIColor colorWithRed:0.14 green:0.15 blue:0.15 alpha:1.0];
 
-    self.panel = [[UIView alloc] initWithFrame:CGRectMake(18, 92, 340, 430)];
+    self.panel = [[UIView alloc] initWithFrame:CGRectMake(18, 72, 340, 512)];
     self.panel.backgroundColor = dark;
     self.panel.layer.cornerRadius = 18;
     self.panel.layer.borderColor = [UIColor colorWithWhite:1 alpha:0.08].CGColor;
@@ -225,6 +225,10 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
     [self.colorSwitch addTarget:self action:@selector(colorSwitchChanged) forControlEvents:UIControlEventValueChanged];
     [self.panel addSubview:self.colorSwitch];
 
+    UIButton *exit = [self panelButtonWithTitle:@"Tat tweak" color:[UIColor redColor] frame:CGRectMake(20, 442, 300, 54)];
+    [exit addTarget:self action:@selector(disableTweak) forControlEvents:UIControlEventTouchUpInside];
+    [self.panel addSubview:exit];
+
     [self.window.rootViewController.view addSubview:self.panel];
 }
 
@@ -245,6 +249,20 @@ static NSString * const VCPrefsPath = @"/var/mobile/Library/Preferences/local.vc
 
 - (void)closePanel {
     self.panel.hidden = YES;
+}
+
+- (void)disableTweak {
+    self.hookSwitch.on = NO;
+    self.colorSwitch.on = NO;
+    self.tintView.hidden = YES;
+    self.streamView.hidden = YES;
+    self.panel.hidden = YES;
+    self.bubble.hidden = YES;
+    [self.statusTimer invalidate];
+    self.statusTimer = nil;
+    [self.flashTimer invalidate];
+    self.flashTimer = nil;
+    [self savePrefs];
 }
 
 - (void)toggleStream {
