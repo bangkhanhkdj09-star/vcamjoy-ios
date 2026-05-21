@@ -156,7 +156,13 @@ static void VCPreferencesChanged(CFNotificationCenterRef center, void *observer,
 - (void)logLocked:(NSString *)message {
     static NSUInteger lineCount = 0;
     lineCount++;
-    if (lineCount % 30 != 1 && ![message hasPrefix:@"reload"] && ![message containsString:@"skipped"]) {
+    BOOL important = [message hasPrefix:@"reload"]
+        || [message hasPrefix:@"ctor"]
+        || [message hasPrefix:@"runtime"]
+        || [message containsString:@"installed"]
+        || [message containsString:@"failed"]
+        || [message containsString:@"skipped"];
+    if (!important && lineCount % 30 != 1) {
         return;
     }
 

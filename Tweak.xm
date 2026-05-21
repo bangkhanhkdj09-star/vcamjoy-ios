@@ -3,11 +3,13 @@
 #import <Foundation/Foundation.h>
 #import <objc/message.h>
 #import <objc/runtime.h>
+#import <substrate.h>
 
 #import "VCFrameSource.h"
 
 static CMSampleBufferRef VCCopyReplacementForSampleBuffer(CMSampleBufferRef sampleBuffer);
 static CMSampleBufferRef VCCopyReplacementNotingHook(NSString *hookName, CMSampleBufferRef sampleBuffer);
+static void VCInstallRuntimeHooks(void);
 
 @interface VCDelegateProxy : NSObject
 @property(nonatomic, weak) id originalDelegate;
@@ -91,101 +93,117 @@ static CMSampleBufferRef VCCopyReplacementNotingHook(NSString *hookName, CMSampl
 
 %end
 
-%hook BWNodeOutput
+static NSMutableDictionary<NSString *, NSValue *> *VCOriginalIMPs;
 
-- (void)emitSampleBuffer:(CMSampleBufferRef)sampleBuffer {
-    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"BWNodeOutput.emitSampleBuffer", sampleBuffer);
-    %orig(replacement ?: sampleBuffer);
+static NSString *VCIMPKey(id self, SEL selector) {
+    return [NSString stringWithFormat:@"%@.%@", NSStringFromClass([self class]), NSStringFromSelector(selector)];
+}
+
+static IMP VCOriginalIMP(id self, SEL selector) {
+    return [VCOriginalIMPs[VCIMPKey(self, selector)] pointerValue];
+}
+
+static void repl_emitSampleBuffer(id self, SEL _cmd, CMSampleBufferRef sampleBuffer) {
+    NSString *hookName = [NSString stringWithFormat:@"%@.%@", NSStringFromClass([self class]), NSStringFromSelector(_cmd)];
+    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(hookName, sampleBuffer);
+    void (*original)(id, SEL, CMSampleBufferRef) = (void (*)(id, SEL, CMSampleBufferRef))VCOriginalIMP(self, _cmd);
+    if (!original) {
+        return;
+    }
+    original(self, _cmd, replacement ?: sampleBuffer);
     if (replacement) {
         CFRelease(replacement);
     }
 }
 
-%end
-
-%hook BWNode
-
-- (void)renderSampleBuffer:(CMSampleBufferRef)sampleBuffer forInput:(id)input {
-    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"BWNode.renderSampleBuffer:forInput:", sampleBuffer);
-    %orig(replacement ?: sampleBuffer, input);
+static void repl_setOneSampleBuffer(id self, SEL _cmd, CMSampleBufferRef sampleBuffer) {
+    NSString *hookName = [NSString stringWithFormat:@"%@.%@", NSStringFromClass([self class]), NSStringFromSelector(_cmd)];
+    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(hookName, sampleBuffer);
+    void (*original)(id, SEL, CMSampleBufferRef) = (void (*)(id, SEL, CMSampleBufferRef))VCOriginalIMP(self, _cmd);
+    if (!original) {
+        return;
+    }
+    original(self, _cmd, replacement ?: sampleBuffer);
     if (replacement) {
         CFRelease(replacement);
     }
 }
 
-%end
-
-%hook BWPixelTransferNode
-
-- (void)renderSampleBuffer:(CMSampleBufferRef)sampleBuffer forInput:(id)input {
-    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"BWPixelTransferNode.renderSampleBuffer:forInput:", sampleBuffer);
-    %orig(replacement ?: sampleBuffer, input);
+static void repl_renderSampleBufferForInput(id self, SEL _cmd, CMSampleBufferRef sampleBuffer, id input) {
+    NSString *hookName = [NSString stringWithFormat:@"%@.%@", NSStringFromClass([self class]), NSStringFromSelector(_cmd)];
+    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(hookName, sampleBuffer);
+    void (*original)(id, SEL, CMSampleBufferRef, id) = (void (*)(id, SEL, CMSampleBufferRef, id))VCOriginalIMP(self, _cmd);
+    if (!original) {
+        return;
+    }
+    original(self, _cmd, replacement ?: sampleBuffer, input);
     if (replacement) {
         CFRelease(replacement);
     }
 }
 
-%end
-
-%hook FigCaptureSourceVideoDataSinkPipeline
-
-- (void)setLiveSampleBuffer:(CMSampleBufferRef)sampleBuffer {
-    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"FigCaptureSourceVideoDataSinkPipeline.setLiveSampleBuffer:", sampleBuffer);
-    %orig(replacement ?: sampleBuffer);
-    if (replacement) {
-        CFRelease(replacement);
+static BOOL VCHookClassSelector(Class cls, SEL selector, IMP replacement) {
+    Method method = class_getInstanceMethod(cls, selector);
+    if (!method) {
+        return NO;
     }
+
+    NSString *key = [NSString stringWithFormat:@"%@.%@", NSStringFromClass(cls), NSStringFromSelector(selector)];
+    if (VCOriginalIMPs[key]) {
+        return NO;
+    }
+
+    IMP original = nil;
+    MSHookMessageEx(cls, selector, replacement, &original);
+    if (!original) {
+        return NO;
+    }
+    VCOriginalIMPs[key] = [NSValue valueWithPointer:original];
+    [[VCFrameSource sharedSource] noteEvent:[NSString stringWithFormat:@"runtime hook installed %@.%@",
+                                             NSStringFromClass(cls),
+                                             NSStringFromSelector(selector)]];
+    return YES;
 }
 
-- (void)setLiveBGRASampleBuffer:(CMSampleBufferRef)sampleBuffer {
-    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"FigCaptureSourceVideoDataSinkPipeline.setLiveBGRASampleBuffer:", sampleBuffer);
-    %orig(replacement ?: sampleBuffer);
-    if (replacement) {
-        CFRelease(replacement);
+static void VCInstallRuntimeHooks(void) {
+    if (!VCOriginalIMPs) {
+        VCOriginalIMPs = [NSMutableDictionary dictionary];
+    }
+
+    NSArray<NSString *> *classNames = @[
+        @"BWNodeOutput",
+        @"BWNode",
+        @"BWPixelTransferNode",
+        @"BWStillImageScalerNode",
+        @"FigCaptureSourceVideoDataSinkPipeline",
+        @"FigCaptureSourceVideoDataSink",
+        @"FigCaptureSource",
+        @"FigCaptureSink",
+        @"FigCaptureVideoDataSink"
+    ];
+
+    for (NSString *className in classNames) {
+        Class cls = objc_getClass(className.UTF8String);
+        if (!cls) {
+            continue;
+        }
+        VCHookClassSelector(cls, @selector(emitSampleBuffer:), (IMP)repl_emitSampleBuffer);
+        VCHookClassSelector(cls, @selector(setLiveSampleBuffer:), (IMP)repl_setOneSampleBuffer);
+        VCHookClassSelector(cls, @selector(setLiveBGRASampleBuffer:), (IMP)repl_setOneSampleBuffer);
+        VCHookClassSelector(cls, @selector(setBGRASampleBuffer:), (IMP)repl_setOneSampleBuffer);
+        VCHookClassSelector(cls, @selector(setYUVSampleBuffer:), (IMP)repl_setOneSampleBuffer);
+        VCHookClassSelector(cls, @selector(renderSampleBuffer:forInput:), (IMP)repl_renderSampleBufferForInput);
     }
 }
-
-- (void)setBGRASampleBuffer:(CMSampleBufferRef)sampleBuffer {
-    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"FigCaptureSourceVideoDataSinkPipeline.setBGRASampleBuffer:", sampleBuffer);
-    %orig(replacement ?: sampleBuffer);
-    if (replacement) {
-        CFRelease(replacement);
-    }
-}
-
-- (void)setYUVSampleBuffer:(CMSampleBufferRef)sampleBuffer {
-    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"FigCaptureSourceVideoDataSinkPipeline.setYUVSampleBuffer:", sampleBuffer);
-    %orig(replacement ?: sampleBuffer);
-    if (replacement) {
-        CFRelease(replacement);
-    }
-}
-
-%end
-
-%hook FigCaptureSourceVideoDataSink
-
-- (void)setLiveSampleBuffer:(CMSampleBufferRef)sampleBuffer {
-    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"FigCaptureSourceVideoDataSink.setLiveSampleBuffer:", sampleBuffer);
-    %orig(replacement ?: sampleBuffer);
-    if (replacement) {
-        CFRelease(replacement);
-    }
-}
-
-- (void)setLiveBGRASampleBuffer:(CMSampleBufferRef)sampleBuffer {
-    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"FigCaptureSourceVideoDataSink.setLiveBGRASampleBuffer:", sampleBuffer);
-    %orig(replacement ?: sampleBuffer);
-    if (replacement) {
-        CFRelease(replacement);
-    }
-}
-
-%end
 
 %ctor {
     @autoreleasepool {
         [[VCFrameSource sharedSource] reloadConfiguration];
         [[VCFrameSource sharedSource] noteEvent:[NSString stringWithFormat:@"ctor loaded process=%@", NSProcessInfo.processInfo.processName]];
+        VCInstallRuntimeHooks();
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            VCInstallRuntimeHooks();
+            [[VCFrameSource sharedSource] noteEvent:@"runtime hook rescan done"];
+        });
     }
 }
