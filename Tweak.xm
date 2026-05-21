@@ -6,6 +6,9 @@
 
 #import "VCFrameSource.h"
 
+static CMSampleBufferRef VCCopyReplacementForSampleBuffer(CMSampleBufferRef sampleBuffer);
+static CMSampleBufferRef VCCopyReplacementNotingHook(NSString *hookName, CMSampleBufferRef sampleBuffer);
+
 @interface VCDelegateProxy : NSObject
 @property(nonatomic, weak) id originalDelegate;
 @end
@@ -47,8 +50,7 @@
         return;
     }
 
-    [[VCFrameSource sharedSource] noteHook:@"AVCaptureVideoDataOutput.delegate" sampleBuffer:sampleBuffer];
-    CMSampleBufferRef replacement = [[VCFrameSource sharedSource] copyFrameMatchingSampleBuffer:sampleBuffer];
+    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"AVCaptureVideoDataOutput.delegate", sampleBuffer);
     CMSampleBufferRef delivered = replacement ?: sampleBuffer;
 
     void (*send)(id, SEL, AVCaptureOutput *, CMSampleBufferRef, AVCaptureConnection *) =
@@ -66,6 +68,11 @@ static const void *VCDelegateProxyKey = &VCDelegateProxyKey;
 
 static CMSampleBufferRef VCCopyReplacementForSampleBuffer(CMSampleBufferRef sampleBuffer) {
     return [[VCFrameSource sharedSource] copyFrameMatchingSampleBuffer:sampleBuffer];
+}
+
+static CMSampleBufferRef VCCopyReplacementNotingHook(NSString *hookName, CMSampleBufferRef sampleBuffer) {
+    [[VCFrameSource sharedSource] noteHook:hookName sampleBuffer:sampleBuffer];
+    return VCCopyReplacementForSampleBuffer(sampleBuffer);
 }
 
 %hook AVCaptureVideoDataOutput
@@ -87,8 +94,87 @@ static CMSampleBufferRef VCCopyReplacementForSampleBuffer(CMSampleBufferRef samp
 %hook BWNodeOutput
 
 - (void)emitSampleBuffer:(CMSampleBufferRef)sampleBuffer {
-    [[VCFrameSource sharedSource] noteHook:@"BWNodeOutput.emitSampleBuffer" sampleBuffer:sampleBuffer];
-    CMSampleBufferRef replacement = VCCopyReplacementForSampleBuffer(sampleBuffer);
+    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"BWNodeOutput.emitSampleBuffer", sampleBuffer);
+    %orig(replacement ?: sampleBuffer);
+    if (replacement) {
+        CFRelease(replacement);
+    }
+}
+
+%end
+
+%hook BWNode
+
+- (void)renderSampleBuffer:(CMSampleBufferRef)sampleBuffer forInput:(id)input {
+    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"BWNode.renderSampleBuffer:forInput:", sampleBuffer);
+    %orig(replacement ?: sampleBuffer, input);
+    if (replacement) {
+        CFRelease(replacement);
+    }
+}
+
+%end
+
+%hook BWPixelTransferNode
+
+- (void)renderSampleBuffer:(CMSampleBufferRef)sampleBuffer forInput:(id)input {
+    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"BWPixelTransferNode.renderSampleBuffer:forInput:", sampleBuffer);
+    %orig(replacement ?: sampleBuffer, input);
+    if (replacement) {
+        CFRelease(replacement);
+    }
+}
+
+%end
+
+%hook FigCaptureSourceVideoDataSinkPipeline
+
+- (void)setLiveSampleBuffer:(CMSampleBufferRef)sampleBuffer {
+    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"FigCaptureSourceVideoDataSinkPipeline.setLiveSampleBuffer:", sampleBuffer);
+    %orig(replacement ?: sampleBuffer);
+    if (replacement) {
+        CFRelease(replacement);
+    }
+}
+
+- (void)setLiveBGRASampleBuffer:(CMSampleBufferRef)sampleBuffer {
+    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"FigCaptureSourceVideoDataSinkPipeline.setLiveBGRASampleBuffer:", sampleBuffer);
+    %orig(replacement ?: sampleBuffer);
+    if (replacement) {
+        CFRelease(replacement);
+    }
+}
+
+- (void)setBGRASampleBuffer:(CMSampleBufferRef)sampleBuffer {
+    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"FigCaptureSourceVideoDataSinkPipeline.setBGRASampleBuffer:", sampleBuffer);
+    %orig(replacement ?: sampleBuffer);
+    if (replacement) {
+        CFRelease(replacement);
+    }
+}
+
+- (void)setYUVSampleBuffer:(CMSampleBufferRef)sampleBuffer {
+    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"FigCaptureSourceVideoDataSinkPipeline.setYUVSampleBuffer:", sampleBuffer);
+    %orig(replacement ?: sampleBuffer);
+    if (replacement) {
+        CFRelease(replacement);
+    }
+}
+
+%end
+
+%hook FigCaptureSourceVideoDataSink
+
+- (void)setLiveSampleBuffer:(CMSampleBufferRef)sampleBuffer {
+    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"FigCaptureSourceVideoDataSink.setLiveSampleBuffer:", sampleBuffer);
+    %orig(replacement ?: sampleBuffer);
+    if (replacement) {
+        CFRelease(replacement);
+    }
+}
+
+- (void)setLiveBGRASampleBuffer:(CMSampleBufferRef)sampleBuffer {
+    CMSampleBufferRef replacement = VCCopyReplacementNotingHook(@"FigCaptureSourceVideoDataSink.setLiveBGRASampleBuffer:", sampleBuffer);
     %orig(replacement ?: sampleBuffer);
     if (replacement) {
         CFRelease(replacement);
@@ -100,5 +186,6 @@ static CMSampleBufferRef VCCopyReplacementForSampleBuffer(CMSampleBufferRef samp
 %ctor {
     @autoreleasepool {
         [[VCFrameSource sharedSource] reloadConfiguration];
+        [[VCFrameSource sharedSource] noteEvent:[NSString stringWithFormat:@"ctor loaded process=%@", NSProcessInfo.processInfo.processName]];
     }
 }

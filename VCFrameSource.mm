@@ -89,6 +89,12 @@ static void VCPreferencesChanged(CFNotificationCenterRef center, void *observer,
     });
 }
 
+- (void)noteEvent:(NSString *)event {
+    dispatch_async(_queue, ^{
+        [self logLocked:event ?: @"event=nil"];
+    });
+}
+
 - (void)reloadConfiguration {
     dispatch_sync(_queue, ^{
         NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:VCPreferencePath] ?: @{};
