@@ -6,6 +6,16 @@ include $(THEOS)/makefiles/common.mk
 TWEAK_NAME := CleanVCamLocal
 CleanVCamLocal_FILES := Tweak.xm VCFrameSource.mm VCSampleBufferTools.mm
 CleanVCamLocal_CFLAGS := -fobjc-arc
-CleanVCamLocal_FRAMEWORKS := Foundation AVFoundation CoreMedia CoreVideo UIKit
+CleanVCamLocal_FRAMEWORKS := Foundation AVFoundation CoreMedia CoreVideo CoreGraphics ImageIO
 
 include $(THEOS_MAKE_PATH)/tweak.mk
+
+BUNDLE_NAME := CleanVCamLocalPrefs
+CleanVCamLocalPrefs_FILES := prefs/RootListController.mm
+CleanVCamLocalPrefs_INSTALL_PATH := /Library/PreferenceBundles
+CleanVCamLocalPrefs_FRAMEWORKS := Foundation UIKit Photos
+CleanVCamLocalPrefs_PRIVATE_FRAMEWORKS := Preferences
+CleanVCamLocalPrefs_CFLAGS := -fobjc-arc
+CleanVCamLocalPrefs_RESOURCE_DIRS := prefs/Resources
+
+include $(THEOS_MAKE_PATH)/preference_bundle.mk

@@ -58,8 +58,13 @@ sudo dpkg -i com.local.cleanvcam_0.1.0_iphoneos-arm64.deb
 sudo sbreload
 ```
 
-Then put your source video here:
+## 6. Use the Tweak
 
-```text
-/var/mobile/Media/VCam/source.mp4
-```
+1. Open Settings.
+2. Open Clean VCam.
+3. Enable the tweak.
+4. Tap Choose Photo or Video.
+5. Pick a photo or video from the library.
+6. Open Camera or a supported app.
+
+The panel copies selected media to `/var/mobile/Media/VCam/` and updates `/var/mobile/Library/Preferences/com.local.cleanvcam.plist`.

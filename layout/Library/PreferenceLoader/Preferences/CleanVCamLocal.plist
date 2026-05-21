@@ -1,0 +1,7 @@
+{
+  entry = {
+    bundle = CleanVCamLocalPrefs;
+    cell = PSLinkCell;
+    label = "Clean VCam";
+  };
+}
