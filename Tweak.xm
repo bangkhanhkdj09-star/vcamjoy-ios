@@ -47,6 +47,7 @@
         return;
     }
 
+    [[VCFrameSource sharedSource] noteHook:@"AVCaptureVideoDataOutput.delegate" sampleBuffer:sampleBuffer];
     CMSampleBufferRef replacement = [[VCFrameSource sharedSource] copyFrameMatchingSampleBuffer:sampleBuffer];
     CMSampleBufferRef delivered = replacement ?: sampleBuffer;
 
@@ -86,6 +87,7 @@ static CMSampleBufferRef VCCopyReplacementForSampleBuffer(CMSampleBufferRef samp
 %hook BWNodeOutput
 
 - (void)emitSampleBuffer:(CMSampleBufferRef)sampleBuffer {
+    [[VCFrameSource sharedSource] noteHook:@"BWNodeOutput.emitSampleBuffer" sampleBuffer:sampleBuffer];
     CMSampleBufferRef replacement = VCCopyReplacementForSampleBuffer(sampleBuffer);
     %orig(replacement ?: sampleBuffer);
     if (replacement) {

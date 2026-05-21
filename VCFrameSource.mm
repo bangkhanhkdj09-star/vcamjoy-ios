@@ -10,9 +10,11 @@
 static NSString *const VCPreferencePath = @"/var/mobile/Library/Preferences/com.local.cleanvcam.plist";
 static NSString *const VCDefaultVideoPath = @"/var/mobile/Media/VCam/source.mp4";
 static NSString *const VCDefaultImagePath = @"/var/mobile/Media/VCam/source.jpg";
+static NSString *const VCDebugLogPath = @"/var/mobile/Media/VCam/debug.log";
 static CFStringRef const VCReloadNotification = CFSTR("com.local.cleanvcam/reload");
 
 @interface VCFrameSource ()
+- (void)logLocked:(NSString *)message;
 - (void)resetReaderLocked;
 - (BOOL)startReaderLocked;
 - (CMSampleBufferRef)copyNextVideoFrameLocked;
@@ -75,6 +77,18 @@ static void VCPreferencesChanged(CFNotificationCenterRef center, void *observer,
     return enabled;
 }
 
+- (void)noteHook:(NSString *)hookName sampleBuffer:(CMSampleBufferRef)sampleBuffer {
+    CVImageBufferRef imageBuffer = sampleBuffer ? CMSampleBufferGetImageBuffer(sampleBuffer) : nil;
+    dispatch_async(_queue, ^{
+        [self logLocked:[NSString stringWithFormat:@"hook=%@ hasImage=%@ mediaType=%@ mediaPath=%@ enabled=%@",
+                         hookName,
+                         imageBuffer ? @"yes" : @"no",
+                         _mediaType ?: @"nil",
+                         _mediaPath ?: @"nil",
+                         _enabled ? @"yes" : @"no"]];
+    });
+}
+
 - (void)reloadConfiguration {
     dispatch_sync(_queue, ^{
         NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:VCPreferencePath] ?: @{};
@@ -98,6 +112,11 @@ static void VCPreferencesChanged(CFNotificationCenterRef center, void *observer,
             }
             [self resetReaderLocked];
         }
+        [self logLocked:[NSString stringWithFormat:@"reload enabled=%@ mediaType=%@ mediaPath=%@ exists=%@",
+                         _enabled ? @"yes" : @"no",
+                         _mediaType ?: @"nil",
+                         _mediaPath ?: @"nil",
+                         [[NSFileManager defaultManager] fileExistsAtPath:_mediaPath ?: @""] ? @"yes" : @"no"]];
     });
 }
 
@@ -109,6 +128,7 @@ static void VCPreferencesChanged(CFNotificationCenterRef center, void *observer,
     __block CMSampleBufferRef replacement = nil;
     dispatch_sync(_queue, ^{
         if (!_enabled) {
+            [self logLocked:@"replacement skipped disabled"];
             return;
         }
 
@@ -116,13 +136,38 @@ static void VCPreferencesChanged(CFNotificationCenterRef center, void *observer,
             ? [self copyStillImageFrameLockedMatchingSampleBuffer:sampleBuffer]
             : [self copyNextVideoFrameLocked];
         if (!sourceFrame) {
+            [self logLocked:@"replacement skipped source frame nil"];
             return;
         }
 
         replacement = VCCopyVideoSampleBufferWithTiming(sourceFrame, sampleBuffer);
         CFRelease(sourceFrame);
+        [self logLocked:replacement ? @"replacement created" : @"replacement failed timing copy"];
     });
     return replacement;
+}
+
+- (void)logLocked:(NSString *)message {
+    static NSUInteger lineCount = 0;
+    lineCount++;
+    if (lineCount % 30 != 1 && ![message hasPrefix:@"reload"] && ![message containsString:@"skipped"]) {
+        return;
+    }
+
+    NSString *line = [NSString stringWithFormat:@"%@ %@\n", [NSDate date], message];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    [fm createDirectoryAtPath:[VCDebugLogPath stringByDeletingLastPathComponent]
+  withIntermediateDirectories:YES
+                   attributes:@{NSFilePosixPermissions: @(0755)}
+                        error:nil];
+    NSFileHandle *handle = [NSFileHandle fileHandleForWritingAtPath:VCDebugLogPath];
+    if (!handle) {
+        [line writeToFile:VCDebugLogPath atomically:YES encoding:NSUTF8StringEncoding error:nil];
+        return;
+    }
+    [handle seekToEndOfFile];
+    [handle writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
+    [handle closeFile];
 }
 
 - (void)resetReaderLocked {
@@ -138,12 +183,14 @@ static void VCPreferencesChanged(CFNotificationCenterRef center, void *observer,
     AVURLAsset *asset = [AVURLAsset URLAssetWithURL:url options:nil];
     AVAssetTrack *track = [[asset tracksWithMediaType:AVMediaTypeVideo] firstObject];
     if (!track) {
+        [self logLocked:[NSString stringWithFormat:@"video reader failed no track path=%@", _mediaPath ?: @"nil"]];
         return NO;
     }
 
     NSError *error = nil;
     AVAssetReader *reader = [AVAssetReader assetReaderWithAsset:asset error:&error];
     if (!reader || error) {
+        [self logLocked:[NSString stringWithFormat:@"video reader failed %@", error ?: (id)@"unknown"]];
         return NO;
     }
 
@@ -153,11 +200,13 @@ static void VCPreferencesChanged(CFNotificationCenterRef center, void *observer,
     AVAssetReaderTrackOutput *output = [AVAssetReaderTrackOutput assetReaderTrackOutputWithTrack:track outputSettings:settings];
     output.alwaysCopiesSampleData = NO;
     if (![reader canAddOutput:output]) {
+        [self logLocked:@"video reader failed cannot add output"];
         return NO;
     }
 
     [reader addOutput:output];
     if (![reader startReading]) {
+        [self logLocked:[NSString stringWithFormat:@"video reader failed start %@", reader.error ?: (id)@"unknown"]];
         return NO;
     }
 
@@ -193,6 +242,9 @@ static void VCPreferencesChanged(CFNotificationCenterRef center, void *observer,
     }
     CGImageRef image = _stillImage;
     if (!image) {
+        [self logLocked:[NSString stringWithFormat:@"image load failed path=%@ exists=%@",
+                         _mediaPath ?: @"nil",
+                         [[NSFileManager defaultManager] fileExistsAtPath:_mediaPath ?: @""] ? @"yes" : @"no"]];
         return nil;
     }
 
@@ -200,6 +252,7 @@ static void VCPreferencesChanged(CFNotificationCenterRef center, void *observer,
     size_t width = targetImageBuffer ? CVPixelBufferGetWidth(targetImageBuffer) : CGImageGetWidth(image);
     size_t height = targetImageBuffer ? CVPixelBufferGetHeight(targetImageBuffer) : CGImageGetHeight(image);
     if (width == 0 || height == 0) {
+        [self logLocked:@"image frame failed zero size"];
         return nil;
     }
 
@@ -219,6 +272,7 @@ static void VCPreferencesChanged(CFNotificationCenterRef center, void *observer,
         &pixelBuffer
     );
     if (createResult != kCVReturnSuccess || !pixelBuffer) {
+        [self logLocked:[NSString stringWithFormat:@"image pixel buffer failed %d", createResult]];
         return nil;
     }
 
@@ -240,6 +294,7 @@ static void VCPreferencesChanged(CFNotificationCenterRef center, void *observer,
     if (!context) {
         CVPixelBufferUnlockBaseAddress(pixelBuffer, 0);
         CVPixelBufferRelease(pixelBuffer);
+        [self logLocked:@"image context failed"];
         return nil;
     }
 
@@ -265,6 +320,7 @@ static void VCPreferencesChanged(CFNotificationCenterRef center, void *observer,
     OSStatus status = CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, pixelBuffer, &formatDescription);
     if (status != noErr || !formatDescription) {
         CVPixelBufferRelease(pixelBuffer);
+        [self logLocked:[NSString stringWithFormat:@"image format failed %d", (int)status]];
         return nil;
     }
 
@@ -288,6 +344,7 @@ static void VCPreferencesChanged(CFNotificationCenterRef center, void *observer,
 
     CFRelease(formatDescription);
     CVPixelBufferRelease(pixelBuffer);
+    [self logLocked:status == noErr ? @"image sample created" : [NSString stringWithFormat:@"image sample failed %d", (int)status]];
     return status == noErr ? imageSample : nil;
 }
 

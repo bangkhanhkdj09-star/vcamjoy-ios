@@ -6,6 +6,7 @@ static NSString *const VCPreferencePath = @"/var/mobile/Library/Preferences/com.
 static NSString *const VCMediaDirectory = @"/var/mobile/Media/VCam";
 static NSString *const VCVideoPath = @"/var/mobile/Media/VCam/source.mp4";
 static NSString *const VCImagePath = @"/var/mobile/Media/VCam/source.jpg";
+static NSString *const VCDebugLogPath = @"/var/mobile/Media/VCam/debug.log";
 static CFStringRef const VCReloadNotification = CFSTR("com.local.cleanvcam/reload");
 
 @interface VCAppViewController () <UIImagePickerControllerDelegate, UINavigationControllerDelegate>
@@ -77,6 +78,12 @@ static CFStringRef const VCReloadNotification = CFSTR("com.local.cleanvcam/reloa
     [clearButton addTarget:self action:@selector(clearMedia) forControlEvents:UIControlEventTouchUpInside];
     [stack addArrangedSubview:clearButton];
 
+    UIButton *debugButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [debugButton setTitle:@"Show Debug Log" forState:UIControlStateNormal];
+    debugButton.titleLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightMedium];
+    [debugButton addTarget:self action:@selector(showDebugLog) forControlEvents:UIControlEventTouchUpInside];
+    [stack addArrangedSubview:debugButton];
+
     self.statusLabel = [UILabel new];
     self.statusLabel.font = [UIFont systemFontOfSize:16 weight:UIFontWeightSemibold];
     self.statusLabel.numberOfLines = 0;
@@ -119,12 +126,24 @@ static CFStringRef const VCReloadNotification = CFSTR("com.local.cleanvcam/reloa
 
     self.enabledSwitch.on = enabled;
     if (path.length > 0) {
+        NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:path error:nil];
+        unsigned long long size = [attrs fileSize];
         self.statusLabel.text = [NSString stringWithFormat:@"Selected: %@", [type isEqualToString:@"image"] ? @"Photo" : @"Video"];
-        self.pathLabel.text = path;
+        self.pathLabel.text = [NSString stringWithFormat:@"%@\nFile: %@", path, size > 0 ? [NSString stringWithFormat:@"%llu bytes", size] : @"missing or empty"];
     } else {
         self.statusLabel.text = @"No media selected";
         self.pathLabel.text = @"Choose a photo or video before opening Camera.";
     }
+}
+
+- (void)showDebugLog {
+    NSString *log = [NSString stringWithContentsOfFile:VCDebugLogPath encoding:NSUTF8StringEncoding error:nil];
+    if (!log.length) {
+        log = @"No debug log yet. Open Camera for 5 seconds, close it, then come back here.";
+    } else if (log.length > 3500) {
+        log = [log substringFromIndex:log.length - 3500];
+    }
+    [self showMessage:@"Debug Log" body:log];
 }
 
 - (void)enabledChanged:(UISwitch *)sender {
