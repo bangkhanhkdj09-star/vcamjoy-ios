@@ -1,6 +1,6 @@
 # Clean VCam Local
 
-Clean VCam Local is a source-only Theos tweak scaffold for replacing camera sample buffers with a local photo or video chosen from Settings.
+Clean VCam Local is a source-only Theos tweak scaffold for replacing camera sample buffers with a local photo or video chosen from the Clean VCam Home Screen app.
 
 It does not reuse binaries, domains, helper dylibs, or network behavior from any existing `.deb`.
 
@@ -9,7 +9,8 @@ It does not reuse binaries, domains, helper dylibs, or network behavior from any
 - Hooks `AVCaptureVideoDataOutput` delegate assignment.
 - Wraps the original sample-buffer delegate with a proxy.
 - Hooks private `BWNodeOutput -emitSampleBuffer:` for the iOS 16.x Camera pipeline.
-- Adds a Settings panel through PreferenceLoader.
+- Adds a Home Screen app named Clean VCam.
+- Also includes a Settings panel when PreferenceLoader is available.
 - Lets you choose a photo or video from the iOS photo library.
 - When the app receives `captureOutput:didOutputSampleBuffer:fromConnection:`, the proxy tries to provide a replacement frame from local media.
 - If replacement fails, it passes the real camera sample through unchanged.
@@ -52,8 +53,16 @@ Optional config:
 
 After installing the `.deb`:
 
+1. Open the Clean VCam app from the Home Screen.
+2. Enable the tweak.
+3. Tap Choose Photo or Video.
+4. Pick a photo or video from the library.
+5. Open Camera or a supported app.
+
+Optional Settings panel:
+
 1. Open Settings.
-2. Open Clean VCam.
+2. Open Clean VCam, if the panel is visible.
 3. Enable the tweak.
 4. Tap Choose Photo or Video.
 5. Pick a photo or video from the library.

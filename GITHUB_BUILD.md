@@ -60,11 +60,10 @@ sudo sbreload
 
 ## 6. Use the Tweak
 
-1. Open Settings.
-2. Open Clean VCam.
-3. Enable the tweak.
-4. Tap Choose Photo or Video.
-5. Pick a photo or video from the library.
-6. Open Camera or a supported app.
+1. Open the Clean VCam app from the Home Screen.
+2. Enable the tweak.
+3. Tap Choose Photo or Video.
+4. Pick a photo or video from the library.
+5. Open Camera or a supported app.
 
 The panel copies selected media to `/var/mobile/Media/VCam/` and updates `/var/mobile/Library/Preferences/com.local.cleanvcam.plist`.
