@@ -1,0 +1,3 @@
+#!/bin/sh
+mkdir -p /var/mobile/Media/VCam
+killall -9 Camera 2>/dev/null || true

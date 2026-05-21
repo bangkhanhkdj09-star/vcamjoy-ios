@@ -1,9 +1,0 @@
-Package: local.vcambubble
-Name: VCamJoy
-Version: 0.2.0
-Architecture: iphoneos-arm64
-Description: VCamJoy control app plus AVFoundation camera hook for jailbroken iOS 16.
-Maintainer: local
-Author: local
-Section: Tweaks
-Depends: firmware (>= 16.0)

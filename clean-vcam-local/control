@@ -1,0 +1,9 @@
+Package: com.local.cleanvcam
+Name: Clean VCam Local
+Version: 0.1.0
+Architecture: iphoneos-arm64
+Description: Local-file virtual camera tweak scaffold without network calls.
+Maintainer: local
+Author: local
+Section: Tweaks
+Depends: mobilesubstrate (>= 0.9.5000)
