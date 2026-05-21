@@ -10,7 +10,6 @@ It does not reuse binaries, domains, helper dylibs, or network behavior from any
 - Wraps the original sample-buffer delegate with a proxy.
 - Hooks private `BWNodeOutput -emitSampleBuffer:` for the iOS 16.x Camera pipeline.
 - Adds a Home Screen app named Clean VCam.
-- Also includes a Settings panel when PreferenceLoader is available.
 - Lets you choose a photo or video from the iOS photo library.
 - When the app receives `captureOutput:didOutputSampleBuffer:fromConnection:`, the proxy tries to provide a replacement frame from local media.
 - If replacement fails, it passes the real camera sample through unchanged.
@@ -58,15 +57,6 @@ After installing the `.deb`:
 3. Tap Choose Photo or Video.
 4. Pick a photo or video from the library.
 5. Open Camera or a supported app.
-
-Optional Settings panel:
-
-1. Open Settings.
-2. Open Clean VCam, if the panel is visible.
-3. Enable the tweak.
-4. Tap Choose Photo or Video.
-5. Pick a photo or video from the library.
-6. Open Camera or a supported app.
 
 The selected media is copied locally to `/var/mobile/Media/VCam`; no network connection is used.
 

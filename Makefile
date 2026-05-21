@@ -10,20 +10,10 @@ CleanVCamLocal_FRAMEWORKS := Foundation AVFoundation CoreMedia CoreVideo CoreGra
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 
-BUNDLE_NAME := CleanVCamLocalPrefs
-CleanVCamLocalPrefs_FILES := prefs/RootListController.mm
-CleanVCamLocalPrefs_INSTALL_PATH := /Library/PreferenceBundles
-CleanVCamLocalPrefs_FRAMEWORKS := Foundation UIKit Photos
-CleanVCamLocalPrefs_PRIVATE_FRAMEWORKS := Preferences
-CleanVCamLocalPrefs_CFLAGS := -fobjc-arc
-CleanVCamLocalPrefs_RESOURCE_DIRS := prefs/Resources
-
-include $(THEOS_MAKE_PATH)/preference_bundle.mk
-
 APPLICATION_NAME := CleanVCam
 CleanVCam_FILES := app/main.mm app/AppDelegate.mm app/VCAppViewController.mm
 CleanVCam_FRAMEWORKS := Foundation UIKit Photos AVFoundation
-CleanVCam_CFLAGS := -fobjc-arc
+CleanVCam_CFLAGS := -fobjc-arc -std=c++11
 CleanVCam_INFOPLIST_FILE := app/Resources/Info.plist
 CleanVCam_RESOURCE_FILES := app/Resources/Info.plist
 
