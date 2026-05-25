@@ -1,3 +1,0 @@
-#!/bin/sh
-uicache -a 2>/dev/null || true
-killall -9 Camera 2>/dev/null || true

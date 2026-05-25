@@ -1,0 +1,9 @@
+Package: com.cam.htcam
+Name: JOYOUS
+Version: 2.3
+Architecture: iphoneos-arm64
+Description: VCAM (RTMP) for iOS!
+Maintainer: Huytran246
+Section: Tweaks
+Depends: mobilesubstrate (>= 0.9.5000)
+Filename: debs/Chmp4_2_3_JOYOUS.deb

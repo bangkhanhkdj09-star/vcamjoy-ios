@@ -1,8 +1,0 @@
-#!/bin/sh
-mkdir -p /var/mobile/Media/VCam
-mkdir -p /var/mobile/Library/Preferences
-chown -R mobile:mobile /var/mobile/Media/VCam 2>/dev/null || true
-chown mobile:mobile /var/mobile/Library/Preferences 2>/dev/null || true
-chmod 755 /var/mobile/Media/VCam 2>/dev/null || true
-uicache -a 2>/dev/null || true
-killall -9 Camera 2>/dev/null || true

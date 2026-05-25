@@ -1,9 +1,0 @@
-Package: com.local.cleanvcam
-Name: Clean VCam Local
-Version: 0.1.0
-Architecture: iphoneos-arm64
-Description: Local photo/video virtual camera tweak with a Home Screen app.
-Maintainer: local
-Author: local
-Section: Tweaks
-Depends: mobilesubstrate (>= 0.9.5000)
